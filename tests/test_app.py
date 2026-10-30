@@ -301,6 +301,13 @@ def test_decode_maps_back_to_frame_coordinates():
     assert scores[0] == pytest.approx(0.9)
 
 
+def test_decode_ignores_non_person_classes_of_the_visdrone_model():
+    # Columns: x, y, w, h, pedestrian, people, car. One detection is a confident car.
+    output = np.array([[[50.0], [50.0], [10.0], [10.0], [0.01], [0.02], [0.99]]])
+    boxes, _ = decode(output, 0.25, 1.0, 0, 0, 100, 100)
+    assert len(boxes) == 0
+
+
 def test_tracker_keeps_identity_across_frames():
     tracker = IouTracker()
     first = tracker.update(np.array([[0.1, 0.1, 0.2, 0.2], [0.5, 0.5, 0.6, 0.6]]))

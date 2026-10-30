@@ -45,7 +45,8 @@ def nms(boxes, scores, threshold=0.5):
 def decode(output, conf, scale, pad_x, pad_y, frame_w, frame_h):
     """Convert raw YOLO output of shape (1, 4 + classes, N) to normalised frame boxes."""
     pred = output[0].T
-    scores = pred[:, 4:].max(axis=1)
+    # The first two classes are people on the VisDrone model; a person-only model has just one.
+    scores = pred[:, 4:6].max(axis=1)
     pred, scores = pred[scores >= conf], scores[scores >= conf]
     if not len(pred):
         return np.zeros((0, 4)), np.zeros(0)

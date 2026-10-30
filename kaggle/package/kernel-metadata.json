@@ -9,5 +9,5 @@
   "enable_internet": true,
   "dataset_sources": ["mainhatnam/visdrone-2019-mot-val-yolo"],
   "competition_sources": [],
-  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-2"]
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-1", "hassanagddsbdxfg/dronesight-experiment-2"]
 }

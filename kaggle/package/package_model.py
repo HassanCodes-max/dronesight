@@ -21,15 +21,19 @@ import numpy as np  # noqa: E402
 import onnxruntime as ort  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 
-RUNS = Path("/kaggle/input/notebooks/hassanagddsbdxfg/dronesight-experiment-2/runs")
+NOTEBOOKS = Path("/kaggle/input/notebooks/hassanagddsbdxfg")
+CANDIDATES = [NOTEBOOKS / "dronesight-experiment-2/runs/train_vhc/weights/best.pt",
+              NOTEBOOKS / "dronesight-experiment-1/runs/s_960/weights/best.pt"]
 FRAMES = Path("/kaggle/input/datasets/mainhatnam/visdrone-2019-mot-val-yolo/images")
 OUT = Path("/kaggle/working")
 IMGSZ = 960
 SOURCE_FPS = 25  # VisDrone-VID frames; the published sequences are roughly this rate
 CLIP_SECONDS = 40
 
-best = next((RUNS / r / "weights/best.pt" for r in ["train_vhc", "train_hc", "train_v"]
-             if (RUNS / r / "weights/best.pt").exists()))
+source = next(p for p in CANDIDATES if p.exists())
+# Export writes next to the weights, and /kaggle/input is read-only.
+best = Path("/tmp/best.pt")
+shutil.copy(source, best)
 model = YOLO(str(best))
 onnx_path = Path(model.export(format="onnx", imgsz=IMGSZ, simplify=True, device="cpu"))
 shutil.copy(onnx_path, OUT / "person.onnx")
@@ -49,7 +53,8 @@ for frame in sorted(FRAMES.glob("*.jpg")):
 scores = {}
 for name, frames in sequences.items():
     sample = frames[:: max(1, len(frames) // 8)][:8]
-    results = model.predict([str(f) for f in sample], imgsz=IMGSZ, conf=0.25, device=0, verbose=False)
+    results = model.predict([str(f) for f in sample], imgsz=IMGSZ, conf=0.25, classes=[0, 1],
+                            device=0, verbose=False)
     scores[name] = float(np.mean([len(r.boxes) for r in results]))
 chosen = max(scores, key=scores.get)
 
@@ -61,7 +66,7 @@ subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-f", "concat", "-safe", 
                 "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", str(OUT / "flight.mp4")], check=True)
 listing.unlink()
 
-report = {"source_weights": str(best), "imgsz": IMGSZ, "cpu_ms_per_frame": cpu_ms,
+report = {"source_weights": str(source), "imgsz": IMGSZ, "cpu_ms_per_frame": cpu_ms,
           "onnx_mb": (OUT / "person.onnx").stat().st_size / 1e6,
           "video_mb": (OUT / "flight.mp4").stat().st_size / 1e6,
           "sequence": chosen, "frames": len(clip), "mean_people_by_sequence": scores}

@@ -23,7 +23,7 @@ import yaml  # noqa: E402
 from ultralytics import YOLO, settings  # noqa: E402
 from ultralytics.data.utils import check_det_dataset  # noqa: E402
 
-SMOKE = True  # short end-to-end trial; set False for the real run
+SMOKE = False  # True runs a short end-to-end trial
 
 INPUT = Path("/kaggle/input")
 WEIGHTS = INPUT / "notebooks/hassanagddsbdxfg/dronesight-experiment-1/runs/s_960/weights/best.pt"
@@ -123,8 +123,8 @@ def build_heridal():
             boxes = read_person_boxes(HERIDAL / split / "labels" / f"{image.stem}.txt")
             name = re.sub(r"^(train|valid|test)_", "", image.name)
             by_place[re.match(r"[A-Za-z]+", name).group()].append((image, boxes))
-    # Split on images that contain people: many HERIDAL images are empty.
-    assigned = group_split(by_place, lambda items: sum(bool(b) for _, b in items))
+    # Split on people, not images: many images are empty and a few places are very dense.
+    assigned = group_split(by_place, lambda items: sum(len(b) for _, b in items))
     for place, items in by_place.items():
         for image, boxes in items:
             add_image("heridal", assigned[place], image, boxes, long_side=HERIDAL_LONG_SIDE)
