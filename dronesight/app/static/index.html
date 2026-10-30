@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DroneSight: search drone footage in plain English</title>
+  <meta name="description" content="Ask a question about your drone footage and jump straight to the moments that matter.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>DroneSight</a>
+    <div class="account">
+      <span id="who" class="muted"></span>
+      <button id="signin" class="ghost">Sign in</button>
+      <button id="signout" class="ghost" hidden>Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Stop scrubbing. Ask your footage.</h1>
+      <p>Hours of drone video, one question. DroneSight finds the people in your flight and takes you to the exact moment.</p>
+    </section>
+
+    <section class="workspace">
+      <aside class="library">
+        <h2>Flights</h2>
+        <ul id="videos" class="video-list"></ul>
+        <p id="empty" class="muted" hidden>No flights yet. Upload one to begin.</p>
+        <label id="drop" class="drop" tabindex="0">
+          <input id="file" type="file" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv">
+          <strong>Upload a flight</strong>
+          <span class="muted">MP4 or MOV, up to 3 minutes</span>
+        </label>
+        <p id="upload-status" class="status" role="status"></p>
+      </aside>
+
+      <section class="viewer">
+        <div class="stage">
+          <video id="player" controls playsinline preload="metadata"></video>
+          <canvas id="overlay" aria-hidden="true"></canvas>
+          <p id="placeholder" class="placeholder">Choose a flight to start.</p>
+        </div>
+        <form id="ask" class="ask">
+          <input id="question" maxlength="300" autocomplete="off" aria-label="Your question"
+                 placeholder="Ask about this flight, like “groups of people”">
+          <button class="primary" type="submit">Search</button>
+        </form>
+        <div id="examples" class="chips" aria-label="Example questions"></div>
+        <p id="answer" class="answer" role="status"></p>
+        <ol id="clips" class="clips"></ol>
+      </section>
+    </section>
+
+    <p class="fineprint">Uploaded video is private to your account and deleted automatically after 24 hours.
+      The detector can miss very small people, so an empty result is not proof that nobody is there.</p>
+  </main>
+
+  <dialog id="auth">
+    <form id="auth-form" method="dialog">
+      <h2 id="auth-title">Sign in</h2>
+      <label>Email <input id="email" type="email" required maxlength="254" autocomplete="email"></label>
+      <label>Password <input id="password" type="password" required minlength="10" maxlength="128" autocomplete="current-password"></label>
+      <p id="auth-error" class="error" role="alert"></p>
+      <button class="primary" type="submit" id="auth-submit">Sign in</button>
+      <button class="link" type="button" id="auth-switch">New here? Create an account</button>
+      <button class="link" type="button" id="auth-close">Cancel</button>
+    </form>
+  </dialog>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+data/
+outputs/
+models/
+demo/*.mp4
+__pycache__/
+*.pt
+*.onnx
+*.mp4
+*.db
+*.db-*
+.venv/
+.pytest_cache/
+.kaggle/

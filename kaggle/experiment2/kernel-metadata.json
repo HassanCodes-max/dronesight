@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-experiment-2",
+  "title": "DroneSight Experiment 2",
+  "code_file": "train_person.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["rgbnihal/c2a-dataset", "mariannaesposito/heridal-4k"],
+  "competition_sources": [],
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-1"]
+}

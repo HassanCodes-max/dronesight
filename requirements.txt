@@ -1,0 +1,7 @@
+ultralytics>=8.3
+opencv-python>=4.9
+numpy
+pandas
+pyarrow
+tqdm
+pytest

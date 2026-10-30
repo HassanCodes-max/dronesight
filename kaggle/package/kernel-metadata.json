@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-package",
+  "title": "DroneSight Package",
+  "code_file": "package_model.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["mainhatnam/visdrone-2019-mot-val-yolo"],
+  "competition_sources": [],
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-2"]
+}
