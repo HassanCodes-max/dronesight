@@ -27,7 +27,7 @@ class Settings:
     rate_search_per_minute: int = _int("DRONESIGHT_RATE_SEARCH", 30)
     rate_api_per_minute: int = _int("DRONESIGHT_RATE_API", 120)
 
-    frame_stride_seconds: float = float(os.environ.get("DRONESIGHT_STRIDE_SECONDS", 1.0))
+    frame_stride_seconds: float = float(os.environ.get("DRONESIGHT_STRIDE_SECONDS", 0.25))
     conf_threshold: float = float(os.environ.get("DRONESIGHT_CONF", 0.25))
 
     @property

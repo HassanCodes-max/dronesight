@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import db
 from .config import settings
-from .vision import IouTracker, OnnxDetector
+from .vision import OnnxDetector, Tracker
 
 POLL_SECONDS = 2
 
@@ -58,7 +58,7 @@ def index_video(video_id, path, detector):
     set_status(video_id, duration=duration, width=width, height=height, message="Finding people")
 
     stride = max(1, round(fps * settings.frame_stride_seconds))
-    tracker = IouTracker()
+    tracker = Tracker()
     cap = cv2.VideoCapture(str(path))
     rows = []
     try:

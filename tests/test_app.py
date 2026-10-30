@@ -12,7 +12,7 @@ os.environ["DRONESIGHT_DATA"] = tempfile.mkdtemp()
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dronesight.app import config, db, main, search, security, worker  # noqa: E402
-from dronesight.app.vision import IouTracker, decode, nms  # noqa: E402
+from dronesight.app.vision import Tracker, decode, nms  # noqa: E402
 
 PASSWORD = "correct horse battery"
 MP4_HEADER = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
@@ -309,7 +309,7 @@ def test_decode_ignores_non_person_classes_of_the_visdrone_model():
 
 
 def test_tracker_keeps_identity_across_frames():
-    tracker = IouTracker()
+    tracker = Tracker()
     first = tracker.update(np.array([[0.1, 0.1, 0.2, 0.2], [0.5, 0.5, 0.6, 0.6]]))
     second = tracker.update(np.array([[0.51, 0.5, 0.61, 0.6], [0.11, 0.1, 0.21, 0.2]]))
     assert second == [first[1], first[0]]

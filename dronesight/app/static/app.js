@@ -30,7 +30,7 @@ const postJson = (path, payload) => api(path, {
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 function describe(video) {
-  if (video.status === "ready") return video.is_demo ? "Sample flight" : `${clock(video.duration || 0)} long`;
+  if (video.status === "ready") return `${clock(video.duration || 0)} long${video.is_demo ? ", try it without an account" : ""}`;
   if (video.status === "failed") return video.message || "Failed";
   if (video.status === "queued") return "Waiting to start";
   return `${video.message || "Working"}, ${Math.round(video.progress * 100)}% done`;

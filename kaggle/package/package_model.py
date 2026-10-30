@@ -28,7 +28,7 @@ FRAMES = Path("/kaggle/input/datasets/mainhatnam/visdrone-2019-mot-val-yolo/imag
 OUT = Path("/kaggle/working")
 IMGSZ = 960
 SOURCE_FPS = 25  # VisDrone-VID frames; the published sequences are roughly this rate
-CLIP_SECONDS = 40
+CLIP_SEQUENCES = 3
 
 source = next(p for p in CANDIDATES if p.exists())
 # Export writes next to the weights, and /kaggle/input is read-only.
@@ -56,9 +56,10 @@ for name, frames in sequences.items():
     results = model.predict([str(f) for f in sample], imgsz=IMGSZ, conf=0.25, classes=[0, 1],
                             device=0, verbose=False)
     scores[name] = float(np.mean([len(r.boxes) for r in results]))
-chosen = max(scores, key=scores.get)
 
-clip = sequences[chosen][: SOURCE_FPS * CLIP_SECONDS]
+
+busiest = sorted(scores, key=scores.get, reverse=True)[:CLIP_SEQUENCES]
+clip = [frame for name in busiest for frame in sequences[name]]
 listing = OUT / "frames.txt"
 listing.write_text("".join(f"file '{f}'\nduration {1 / SOURCE_FPS}\n" for f in clip))
 subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
@@ -69,6 +70,6 @@ listing.unlink()
 report = {"source_weights": str(source), "imgsz": IMGSZ, "cpu_ms_per_frame": cpu_ms,
           "onnx_mb": (OUT / "person.onnx").stat().st_size / 1e6,
           "video_mb": (OUT / "flight.mp4").stat().st_size / 1e6,
-          "sequence": chosen, "frames": len(clip), "mean_people_by_sequence": scores}
+          "sequences": busiest, "frames": len(clip), "mean_people_by_sequence": scores}
 (OUT / "package_report.json").write_text(json.dumps(report, indent=2))
 print(json.dumps(report, indent=2))

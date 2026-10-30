@@ -77,10 +77,23 @@ class OnnxDetector:
         return decode(output, self.conf, scale, pad_x, pad_y, w, h)
 
 
-class IouTracker:
-    """Greedy IoU matching. Tracks survive `max_missed` sampled frames without a match."""
+def closeness(tracked, boxes):
+    """Similarity from 0 to 1: centre distance measured in box diagonals.
 
-    def __init__(self, threshold=0.2, max_missed=2):
+    People seen from the air are so small that their boxes often stop overlapping between
+    sampled frames, which makes IoU useless here.
+    """
+    centre_a = (tracked[:, None, :2] + tracked[:, None, 2:]) / 2
+    centre_b = (boxes[None, :, :2] + boxes[None, :, 2:]) / 2
+    distance = np.linalg.norm(centre_a - centre_b, axis=2)
+    diagonal = np.linalg.norm(tracked[:, 2:] - tracked[:, :2], axis=1)[:, None]
+    return np.clip(1 - distance / np.maximum(diagonal, 1e-6) / 2, 0, 1)
+
+
+class Tracker:
+    """Greedy nearest matching. Tracks survive `max_missed` sampled frames without a match."""
+
+    def __init__(self, threshold=0.25, max_missed=2):
         self.threshold = threshold
         self.max_missed = max_missed
         self.tracks = {}
@@ -90,9 +103,9 @@ class IouTracker:
         ids = [0] * len(boxes)
         known = list(self.tracks)
         if known and len(boxes):
-            overlaps = iou(np.array([self.tracks[k][0] for k in known]), boxes)
-            for t, d in sorted(np.ndindex(*overlaps.shape), key=lambda p: -overlaps[p]):
-                if overlaps[t, d] < self.threshold:
+            scores = closeness(np.array([self.tracks[k][0] for k in known]), boxes)
+            for t, d in sorted(np.ndindex(*scores.shape), key=lambda p: -scores[p]):
+                if scores[t, d] < self.threshold:
                     break
                 if known[t] is not None and ids[d] == 0:
                     ids[d] = known[t]
