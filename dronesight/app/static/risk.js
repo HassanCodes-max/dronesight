@@ -20,7 +20,7 @@ const LEVELS = [[65, "CRITICAL"], [30, "HIGH"], [10, "WATCH"], [0, "CLEAR"]];
 const COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
 
 // Nothing here can see the ground, so a promise about speed or safety would be false reassurance.
-const PROMISE = /(quick|quickly|fast|easy|easily|safely|soon|should be able|can reach|will reach|is safe|are safe|route is|clear path|no obstacles?)/i;
+const PROMISE = /\b(quick|quickly|fast|easy|easily|safely|soon|should be able|can reach|will reach|is safe|are safe|route is|clear path|no obstacles?)\b/i;
 
 const radians = (degrees) => (degrees * Math.PI) / 180;
 
