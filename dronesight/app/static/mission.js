@@ -341,16 +341,17 @@ function choose(next) {
 async function askMission(question) {
   $("mission-answer").textContent = "Thinking…";
   try {
-    const response = await fetch(ASK_URL, {
+    const send = () => fetch(ASK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, mission: name }),
     });
+    const response = await send().catch(send);  // connections to the worker sometimes drop for a moment
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? "The assistant is unavailable right now.");
     $("mission-answer").textContent = body.answer;
   } catch (error) {
-    $("mission-answer").textContent = error.message;
+    $("mission-answer").textContent = error instanceof TypeError ? "The assistant could not be reached. Please try again." : error.message;
   }
 }
 

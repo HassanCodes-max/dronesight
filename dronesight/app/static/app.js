@@ -161,18 +161,19 @@ function showBusiest() {
 async function askAssistant(question) {
   setResults("Answer", "Thinking…", [], []);
   try {
-    const response = await fetch(ASK_URL, {
+    const send = () => fetch(ASK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
     });
+    const response = await send().catch(send);  // connections to the worker sometimes drop for a moment
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? "The assistant is unavailable right now.");
     const times = [...new Set(body.answer.match(TIME_IN_ANSWER) ?? [])].slice(0, MAX_ANSWER_MOMENTS);
     const found = times.map((text) => sampleNear(toSeconds(text))).filter(Boolean);
     setResults("Answer", body.answer, found, found);
   } catch (error) {
-    setResults("Answer", error.message, [], []);
+    setResults("Answer", error instanceof TypeError ? "The assistant could not be reached. Please try again." : error.message, [], []);
   }
 }
 
