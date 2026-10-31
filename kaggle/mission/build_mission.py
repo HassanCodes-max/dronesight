@@ -110,7 +110,8 @@ def label_count(path):
 person_model = YOLO(str(mounted("dronesight-experiment-2") / "runs/train_vhc/weights/best.pt"))
 flood_model = YOLO(str(mounted("dronesight-flood") / "runs/flood/weights/best.pt"))
 # The fire mission runs once this job is attached to the kernel.
-fire_weights = next((p / "runs/fire/weights/best.pt" for p in INPUT.glob("**/dronesight-experiment-4")), None)
+fire_weights = next((p / "runs/fire/weights/best.pt" for pattern in ("dronesight-experiment-4", "notebooks/*/dronesight-experiment-4")
+                     for p in INPUT.glob(pattern)), None)
 fire_model = YOLO(str(fire_weights)) if fire_weights else None
 unseen = unseen_scenes()
 print({name: len(images) for name, images in unseen.items()}, flush=True)
