@@ -6,7 +6,10 @@ const STATIC_EDITION = document.documentElement.dataset.edition === "static";
 const SAMPLE_FLIGHT = { id: "sample", title: "Sample flight", status: "ready", progress: 1, duration: 41.84, is_demo: 1 };
 // Text shown on each chip, and the question it asks.
 const EXAMPLES = [["Busiest moment", "busiest moment with people"], ["At least 20 people", "at least 20 people"],
-  ["Groups in the first 15 seconds", "groups in the first 15 seconds"], ["Anyone in the last 10 seconds", "anyone in the last 10 seconds"]];
+  ["Groups in the first 15 seconds", "groups in the first 15 seconds"], ["Are there any vehicles?", "Are there any vehicles in this video?"]];
+const ASK_URL = document.documentElement.dataset.askUrl ?? "";
+const TIME_IN_ANSWER = /\b\d+:\d{2}\b/g;
+const MAX_ANSWER_MOMENTS = 4;
 const POLL_MS = 2000;
 const SAMPLE_REACH_SECONDS = 0.6;  // a sample stands for the video this long after it
 const BAR_WIDTH = 4;
@@ -152,6 +155,31 @@ function showBusiest() {
   setResults("Busiest moments", found.length ? "Select one to jump to it." : empty, found, []);
 }
 
+// Questions the filter cannot express go to the language model, and times in its reply become moments.
+async function askAssistant(question) {
+  setResults("Answer", "Thinking…", [], []);
+  try {
+    const response = await fetch(ASK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "The assistant is unavailable right now.");
+    const times = [...new Set(body.answer.match(TIME_IN_ANSWER) ?? [])].slice(0, MAX_ANSWER_MOMENTS);
+    const found = times.map((text) => sampleNear(toSeconds(text))).filter(Boolean);
+    setResults("Answer", body.answer, found, found);
+  } catch (error) {
+    setResults("Answer", error.message, [], []);
+  }
+}
+
+const toSeconds = (text) => text.split(":").reduce((total, part) => total * 60 + Number(part), 0);
+
+function sampleNear(time) {
+  return index.samples.reduce((best, sample) => (Math.abs(sample.t - time) < Math.abs(best.t - time) ? sample : best), index.samples[0]);
+}
+
 function ask(question) {
   if (!index) {
     $("answer").textContent = selected?.status === "ready" ? "This flight is still loading. Try again in a moment." : "Choose a finished flight first.";
@@ -159,7 +187,8 @@ function ask(question) {
   }
   const query = parse(question, index.duration);
   if (!query) {
-    setResults("Your search", "I can only search for people, by how many and when. Try “at least 20 people” or “groups after 30 seconds”.", [], []);
+    if (ASK_URL) askAssistant(question);
+    else setResults("Your search", "I can only search for people, by how many and when. Try “at least 20 people” or “groups after 30 seconds”.", [], []);
     return;
   }
   const { matching, moments: found } = findMoments(index, query);

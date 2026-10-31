@@ -1,7 +1,7 @@
 """Build the free static edition: the sample flight and its detections, with no server.
 
     python -m dronesight.app.seed demo/flight.mp4 "Sample flight"
-    python deploy/build_static.py dist
+    python deploy/build_static.py dist [assistant-url]
 
 It reads the seeded database, so the detections are the worker's real output. Static hosts cannot
 send headers, so the page carries its Content Security Policy in a meta tag.
@@ -20,7 +20,7 @@ STATIC = ROOT / "dronesight/app/static"
 # Hugging Face redirects large files to its CDN, so the video needs that one extra source.
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
        "media-src 'self' https://*.hf.co; "
-       "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'")
+       "connect-src 'self' {assistant}; object-src 'none'; base-uri 'none'; form-action 'none'")
 CARD = """---
 title: DroneSight
 emoji: 🛰️
@@ -35,7 +35,7 @@ Ask a question about drone footage and jump straight to the moment.
 """
 
 
-def main(out):
+def main(out, assistant=""):
     out = Path(out)
     shutil.rmtree(out, ignore_errors=True)
     shutil.copytree(STATIC, out)
@@ -47,8 +47,8 @@ def main(out):
         (out / "index.json").write_text(json.dumps(db.video_index(conn, video), separators=(",", ":")))
     page = out / "index.html"
     html = page.read_text(encoding="utf-8")
-    meta = f'  <meta http-equiv="Content-Security-Policy" content="{CSP}">\n'
-    html = html.replace('data-edition="server"', 'data-edition="static"')
+    meta = f'  <meta http-equiv="Content-Security-Policy" content="{CSP.format(assistant=assistant)}">\n'
+    html = html.replace('data-edition="server"', f'data-edition="static" data-ask-url="{assistant}"')
     html = html.replace('  <meta name="viewport"', meta + '  <meta name="viewport"', 1)
     page.write_text(html, encoding="utf-8", newline="\n")
     (out / "README.md").write_text(CARD, encoding="utf-8", newline="\n")
@@ -56,6 +56,6 @@ def main(out):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
-    main(sys.argv[1])
+    main(*sys.argv[1:])

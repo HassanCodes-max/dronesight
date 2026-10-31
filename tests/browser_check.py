@@ -105,6 +105,11 @@ async def run(url, out):
             checks["mobile has no sideways scroll"] = await page.js(
                 "document.documentElement.scrollWidth <= window.innerWidth")
             await page.shot(Path(out) / "site_mobile.png")
+            await page.js("document.getElementById('question').value = 'Are there any cars in this video?'")
+            await page.js("document.getElementById('ask').requestSubmit()")
+            checks["assistant answers"] = await page.wait("/car/i.test(document.getElementById('answer').textContent) && "
+                                                          "!document.getElementById('answer').textContent.includes('Thinking')", 30)
+            print("assistant:", await page.js("document.getElementById('answer').textContent"))
             return report(page, checks)
 
         await page.js("document.getElementById('signin').click()")

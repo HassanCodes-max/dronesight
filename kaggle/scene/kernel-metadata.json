@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-scene",
+  "title": "DroneSight Scene",
+  "code_file": "describe_flight.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-1", "hassanagddsbdxfg/dronesight-package"]
+}
