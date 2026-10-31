@@ -15,10 +15,10 @@ FastAPI: accounts, uploads, search, rate limits
    |
 SQLite: users, videos, every detection with its time and track
    |
-Worker process: decodes video, runs YOLO11s through ONNX Runtime on CPU, tracks people
+Worker process: decodes video, runs YOLO11s at 1280 through ONNX Runtime on CPU, tracks people
 ```
 
-The model runs through ONNX, so the web server needs no PyTorch or GPU. It takes about 300 to 400 ms per frame on a Kaggle CPU.
+The model runs through ONNX, so the web server needs no PyTorch or GPU. At the 1280 input it takes about 580 ms per frame on a Kaggle CPU and about 650 ms on the development laptop, so a 3-minute flight sampled every 0.25 s indexes in about 8 minutes.
 
 Search is deterministic: a question becomes a filter on stored detections. It costs nothing per query, and text can never become instructions, so there is no prompt injection risk until an LLM is added.
 
@@ -59,12 +59,13 @@ Run the worker and the server in separate terminals, then open http://127.0.0.1:
 
 ## Deploy
 
+The site runs as two containers on an Ubuntu server: the app, and Caddy in front for HTTPS. The app is not exposed directly, so its rate limits see each visitor's real IP.
+
 ```
-hf auth login
-python deploy/push_space.py <your-hf-username>/dronesight
+sh deploy/push_server.sh azureuser@<server-ip> <site-domain>
 ```
 
-The Dockerfile has not been built yet, because the development machine has no Docker. Sample footage comes from VisDrone. Mirrors of that dataset state different licences, so check the official terms before publishing.
+The Dockerfile has not been built yet, because the development machine has no Docker. Hugging Face Docker Spaces were the first plan, but they now need a paid plan. Sample footage comes from VisDrone. Mirrors of that dataset state different licences, so check the official terms before publishing.
 
 ## Experiments
 
@@ -74,6 +75,7 @@ Training runs on Kaggle GPUs. Models are chosen on validation data, never on tes
 |---|---|---|---|
 | 1 | VisDrone | Which of YOLO11n at 640, YOLO11n at 960 or YOLO11s at 960 is best? | Done: YOLO11s at 960 |
 | 2 | VisDrone, HERIDAL, C2A | Does mixing datasets help find people in footage from a dataset the model never saw? | Done: no measurable gain |
+| 3 | VisDrone, HERIDAL | What finds tiny people best within the site's CPU budget? | Inference tests done, training running |
 
 ### Experiment 1 results (10 classes, 30 epochs)
 
@@ -103,9 +105,9 @@ C2A is synthetic: [its authors](https://arxiv.org/abs/2408.04922) paste cut-out 
 
 Every run was scored on all three test sets because that comparison was the question, so test results were seen before the site model was picked. To keep the pick independent, the rule was fixed first: the highest mean mAP50-95 on VisDrone and HERIDAL validation images, excluding C2A.
 
-### Site model
+### First site model comparison
 
-Precision and recall are at confidence 0.25, the threshold the site uses, with a box counted correct at IoU 0.5. The scoring code matched Ultralytics on a known case: 0.164 against 0.163.
+Precision and recall are at confidence 0.25, with a box counted correct at IoU 0.5. The scoring code matched Ultralytics on a known case: 0.164 against 0.163. These numbers overstate the site: they use HERIDAL images already shrunk with area averaging and NMS at 0.7, while the site then used linear shrinking and NMS at 0.5. Experiment 3 scores through the site's own settings.
 
 | Model | VisDrone mAP50-95 | VisDrone recall | VisDrone precision | HERIDAL mAP50-95 | HERIDAL recall | HERIDAL precision | Mean mAP50-95 |
 |---|---|---|---|---|---|---|---|
@@ -114,11 +116,31 @@ Precision and recall are at confidence 0.25, the threshold the site uses, with a
 | VisDrone + HERIDAL | 0.296 | 0.601 | 0.688 | 0.142 | 0.301 | 0.592 | 0.219 |
 | **All three (shipped)** | 0.266 | 0.542 | 0.685 | 0.206 | 0.585 | 0.536 | 0.236 |
 
-The shipped model finds far more people in search-and-rescue footage, 58.5% against 8.5% on HERIDAL, at the cost of more false alarms. It is not the best on VisDrone, and the HERIDAL validation set is small: 482 people in three locations. VisDrone validation also runs much easier than test-dev.
+The all-three model won this comparison and was replaced in Experiment 3. The HERIDAL validation set is small, 482 people in three locations, and VisDrone validation runs much easier than test-dev.
+
+### Experiment 3 inference tests (no training, validation data, site NMS at 0.5)
+
+Found and correct are recall and precision at confidence 0.25.
+
+| Model | Input | Shrinking | Mean mAP50-95 | VisDrone found / correct | HERIDAL found / correct |
+|---|---|---|---|---|---|
+| All three | 960 | Linear | 0.201 | 53% / 75% | 52% / 47% |
+| All three | 960 | Area | 0.228 | 54% / 75% | 57% / 54% |
+| All three | 1280 | Area | 0.246 | 60% / 75% | 63% / 40% |
+| VisDrone + HERIDAL | 960 | Area | 0.219 | 60% / 75% | 30% / 65% |
+| **VisDrone + HERIDAL (shipped)** | 1280 | Area | **0.250** | **65% / 75%** | **34% / 66%** |
+
+- **Shrinking:** area averaging keeps tiny people that linear shrinking loses on 4K frames, at no speed cost. The site now uses it.
+- **Input size:** moving from 960 to 1280 adds about 40% CPU time per frame, 579 ms against 410 ms on Kaggle.
+- **Tiling:** 2 x 2 tiles plus the whole frame scored 0.245 for five model passes per frame with linear shrinking, against 0.244 for one pass at 1280, so it was dropped.
+- **C2A:** with 2 x 2 tiles, only 16% of the all-three model's HERIDAL boxes were correct, against 51% without C2A, so the training run drops it.
+
+The shipped model won on the mean, but 0.250 against 0.246 is close to a tie and it finds far fewer people in HERIDAL. Part 2 repeats HERIDAL three times in training to address that.
 
 ## Update log
 
-- Experiment 2 finished: mixing datasets gave no measurable gain on unseen footage. The site now ships the model trained on all three, chosen on validation data, and all tests pass on it.
+- Experiment 3 inference tests: the site now shrinks frames with area averaging and runs the VisDrone + HERIDAL model at 1280. Deployment moved from Hugging Face to an Ubuntu server with Caddy.
+- Experiment 2 finished: mixing datasets gave no measurable gain on unseen footage. The site moved to the model trained on all three, chosen on validation data.
 - Web app, attack tests, ONNX export and deployment script added. The first site model is the Experiment 1 winner, keeping only its two person classes.
 - Experiment 1 finished, YOLO11s at 960 won. Experiment 2 added: HERIDAL is re-split by location and C2A by base scene to stop near-identical images leaking across splits.
 - Experiment 1 script and Kaggle config added. Training moved to Kaggle.

@@ -1,9 +1,8 @@
-"""Experiment 3, part 1: how far can inference settings alone go on tiny people?
+"""Experiment 3, part 1b: does the way a frame is shrunk change what the model finds?
 
-No training. Runs the two best Experiment 2 models whole-frame at 960 and 1280, and on overlapping
-tiles of the full-resolution image, on VisDrone and HERIDAL validation images. Tiling makes each
-person larger on the model's input but costs one model pass per tile, so passes are recorded.
-Also finds the confidence with the best F1. Test sets are not touched.
+No training. Part 1 scored HERIDAL 4K images far lower than Experiment 2's copies shrunk with
+area averaging, and tiles gave little on top of a 1280 input. This compares both shrink methods
+at 960 and 1280 through the site's NMS threshold. Test sets are not touched.
 """
 import json
 import os
@@ -29,19 +28,13 @@ EXP2_RUNS = INPUT / "notebooks/hassanagddsbdxfg/dronesight-experiment-2/runs"
 MODELS = ["train_vhc", "train_vh"]
 HERIDAL_VAL_PLACES = {"BLI", "JAS", "MED"}  # from experiment2_results.json
 OUT = Path("/kaggle/working")
-RESULTS = OUT / "experiment3a_results.json"
+RESULTS = OUT / "experiment3b_results.json"
 SITE_CONF = 0.25
 IOU_THRESHOLDS = np.linspace(0.5, 0.95, 10)
-TILE_OVERLAP = 0.2
-MERGE_IOU = 0.5
-MAX_DETECTIONS = 1000
-# name: (image size, include whole frame, tile columns, tile rows)
-ARMS = {"full_960": (960, True, 0, 0),
-        "full_1280": (1280, True, 0, 0),
-        "tiles_2x2": (960, False, 2, 2),
-        "full_plus_2x2": (960, True, 2, 2),
-        "tiles_3x2": (960, False, 3, 2)}
-EXPECTED = {"train_vhc": {"visdrone": 0.26596}, "train_vh": {"visdrone": 0.29616}}  # full_960, by package_model.py
+SITE_NMS_IOU = 0.5
+# name: (image size, shrink with area averaging first)
+ARMS = {"linear_960": (960, False), "area_960": (960, True),
+        "linear_1280": (1280, False), "area_1280": (1280, True)}
 
 
 def mounted(slug):
@@ -85,27 +78,16 @@ def load_heridal_val():
     return images
 
 
-def tiles(width, height, columns, rows):
-    """Overlapping (x1, y1, x2, y2) windows covering the image."""
-    tile_w = width / (columns - (columns - 1) * TILE_OVERLAP)
-    tile_h = height / (rows - (rows - 1) * TILE_OVERLAP)
-    return [(round(c * tile_w * (1 - TILE_OVERLAP)), round(r * tile_h * (1 - TILE_OVERLAP)),
-             round(c * tile_w * (1 - TILE_OVERLAP) + tile_w), round(r * tile_h * (1 - TILE_OVERLAP) + tile_h))
-            for r in range(rows) for c in range(columns)]
-
-
-def detect(model, image, imgsz, whole, columns, rows):
-    height, width = image.shape[:2]
-    windows = ([(0, 0, width, height)] if whole else []) + (tiles(width, height, columns, rows) if columns else [])
-    boxes, scores = [], []
-    for x1, y1, x2, y2 in windows:
-        result = model.predict(image[y1:y2, x1:x2], imgsz=imgsz, conf=0.001, iou=0.7, max_det=300,
-                               classes=[0, 1], agnostic_nms=True, device=0, verbose=False)[0]
-        boxes.append(result.boxes.xyxy.cpu() + torch.tensor([x1, y1, x1, y1], dtype=torch.float32))
-        scores.append(result.boxes.conf.cpu())
-    boxes, scores = torch.cat(boxes), torch.cat(scores)
-    keep = nms(boxes, scores, MERGE_IOU)[:MAX_DETECTIONS]  # sorted by score
-    return boxes[keep], scores[keep], len(windows)
+def detect(model, image, imgsz, area):
+    scale = imgsz / max(image.shape[:2])
+    shrink = area and scale < 1
+    if shrink:
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    result = model.predict(image, imgsz=imgsz, conf=0.001, iou=0.7, max_det=300, classes=[0, 1],
+                           agnostic_nms=True, device=0, verbose=False)[0]
+    boxes, scores = result.boxes.xyxy.cpu(), result.boxes.conf.cpu()
+    keep = nms(boxes, scores, SITE_NMS_IOU)  # sorted by score
+    return boxes[keep] / (scale if shrink else 1), scores[keep]
 
 
 def average_precision(hits, total):
@@ -116,9 +98,9 @@ def average_precision(hits, total):
 
 
 def score(model, images, arm):
-    confidences, hits, total, passes = [], [], 0, 0
+    confidences, hits, total = [], [], 0
     for image, truth in images:
-        boxes, conf, used = detect(model, image, *arm)
+        boxes, conf = detect(model, image, *arm)
         overlap = box_iou(boxes, torch.from_numpy(truth)).numpy()
         matched = np.zeros((len(boxes), len(IOU_THRESHOLDS)), dtype=bool)
         for t, threshold in enumerate(IOU_THRESHOLDS):
@@ -133,7 +115,6 @@ def score(model, images, arm):
         confidences.append(conf.numpy())
         hits.append(matched)
         total += len(truth)
-        passes = used
     confidences = np.concatenate(confidences)
     hits = np.concatenate(hits)
     order = np.argsort(-confidences, kind="stable")
@@ -145,7 +126,7 @@ def score(model, images, arm):
     recall = found / max(total, 1)
     f1 = 2 * precision * recall / np.maximum(precision + recall, 1e-9)
     best = int(f1.argmax())
-    return {"mAP50-95": float(np.mean(per_threshold)), "mAP50": per_threshold[0], "passes_per_frame": passes,
+    return {"mAP50-95": float(np.mean(per_threshold)), "mAP50": per_threshold[0],
             "site_precision": float(kept.mean()) if kept.size else 0.0,
             "site_recall": float(kept.sum() / max(total, 1)),
             "best_f1": float(f1[best]), "best_f1_conf": float(confidences[best]),
@@ -166,8 +147,6 @@ for run in MODELS:
         results[run][name] = entry
         print(run, name, json.dumps(entry), flush=True)
         RESULTS.write_text(json.dumps(results, indent=2))
-        if name == "full_960":  # must reproduce the numbers the site model was chosen on
-            assert abs(entry["visdrone"]["mAP50-95"] - EXPECTED[run]["visdrone"]) < 0.01, entry
 
 shutil.rmtree(OUT / "datasets", ignore_errors=True)  # Ultralytics downloads here, not to a temp folder
 print(json.dumps(results, indent=2))

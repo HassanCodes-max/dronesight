@@ -12,7 +12,7 @@ os.environ["DRONESIGHT_DATA"] = tempfile.mkdtemp()
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dronesight.app import config, db, main, search, security, worker  # noqa: E402
-from dronesight.app.vision import Tracker, decode, nms  # noqa: E402
+from dronesight.app.vision import Tracker, decode, letterbox, nms  # noqa: E402
 
 PASSWORD = "correct horse battery"
 MP4_HEADER = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
@@ -286,6 +286,13 @@ def test_corrupt_video_fails_cleanly(client):
         path = conn.execute("SELECT path FROM videos WHERE id = ?", (video_id,)).fetchone()["path"]
     worker.index_video(video_id, path, lambda frame: None)
     assert client.get(f"/api/videos/{video_id}").json()["status"] == "failed"
+
+
+def test_letterbox_averages_fine_detail_when_shrinking():
+    frame = np.zeros((400, 800, 3), dtype=np.uint8)
+    frame[::4, ::4] = 255  # one bright pixel in every 4 x 4 block, as a far-off person might be
+    canvas, *_ = letterbox(frame, 200)
+    assert canvas[60:140, 10:190].mean() == pytest.approx(255 / 16, abs=1)
 
 
 def test_nms_removes_duplicates():

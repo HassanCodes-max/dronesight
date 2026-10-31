@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-experiment-3-train",
+  "title": "DroneSight Experiment 3 Train",
+  "code_file": "train_small.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["mariannaesposito/heridal-4k"],
+  "competition_sources": [],
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-2"]
+}
