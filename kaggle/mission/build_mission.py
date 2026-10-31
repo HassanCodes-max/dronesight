@@ -21,10 +21,6 @@ import numpy as np  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 
 INPUT = Path("/kaggle/input")
-NOTEBOOKS = INPUT / "notebooks/hassanagddsbdxfg"
-PERSON_WEIGHTS = NOTEBOOKS / "dronesight-experiment-2/runs/train_vhc/weights/best.pt"
-FLOOD_WEIGHTS = NOTEBOOKS / "dronesight-flood/runs/flood/weights/best.pt"
-FIRE_WEIGHTS = NOTEBOOKS / "dronesight-experiment-4/runs/fire/weights/best.pt"  # the fire mission runs once this exists
 OUT = Path("/kaggle/working")
 SCENES = OUT / "scenes"
 SEED = 0
@@ -40,8 +36,8 @@ OUTLINE_EPSILON = 0.004  # polygon simplification, as a share of the outline len
 
 
 def mounted(slug):
-    """Kaggle mounts attached datasets at either of these paths, so look in both."""
-    return next(p for pattern in (slug, f"datasets/*/{slug}") for p in INPUT.glob(pattern))
+    """Kaggle mounts attached data at any of these paths, so look in all of them."""
+    return next(p for pattern in (slug, f"datasets/*/{slug}", f"notebooks/*/{slug}") for p in INPUT.glob(pattern))
 
 
 def group_split(groups):
@@ -111,8 +107,11 @@ def label_count(path):
     return len(label.read_text().splitlines()) if label.exists() else 0
 
 
-person_model, flood_model = (YOLO(str(w)) for w in [PERSON_WEIGHTS, FLOOD_WEIGHTS])
-fire_model = YOLO(str(FIRE_WEIGHTS)) if FIRE_WEIGHTS.exists() else None
+person_model = YOLO(str(mounted("dronesight-experiment-2") / "runs/train_vhc/weights/best.pt"))
+flood_model = YOLO(str(mounted("dronesight-flood") / "runs/flood/weights/best.pt"))
+# The fire mission runs once this job is attached to the kernel.
+fire_weights = next((p / "runs/fire/weights/best.pt" for p in INPUT.glob("**/dronesight-experiment-4")), None)
+fire_model = YOLO(str(fire_weights)) if fire_weights else None
 unseen = unseen_scenes()
 print({name: len(images) for name, images in unseen.items()}, flush=True)
 SCENES.mkdir(parents=True, exist_ok=True)

@@ -23,8 +23,6 @@ import onnxruntime as ort  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 
 INPUT = Path("/kaggle/input")
-NOTEBOOKS = INPUT / "notebooks/hassanagddsbdxfg"
-SOURCE = NOTEBOOKS / "dronesight-experiment-3-train/runs/vh_1280/weights/best.pt"
 OUT = Path("/kaggle/working")
 IMGSZ = 1280
 SITE_CONF = 0.25
@@ -33,10 +31,11 @@ CLIP_SEQUENCES = 3
 
 
 def mounted(slug):
-    """Kaggle mounts attached datasets at either of these paths, so look in both."""
-    return next(p for pattern in (slug, f"datasets/*/{slug}") for p in INPUT.glob(pattern))
+    """Kaggle mounts attached data at any of these paths, so look in all of them."""
+    return next(p for pattern in (slug, f"datasets/*/{slug}", f"notebooks/*/{slug}") for p in INPUT.glob(pattern))
 
 
+SOURCE = mounted("dronesight-experiment-3-train") / "runs/vh_1280/weights/best.pt"
 FRAMES = mounted("visdrone-2019-mot-val-yolo") / "images"
 
 
