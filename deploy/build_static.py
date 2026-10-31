@@ -18,7 +18,7 @@ from dronesight.app import db  # noqa: E402
 
 STATIC = ROOT / "dronesight/app/static"
 # Hugging Face redirects large files to its CDN, so the video needs that one extra source.
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://*.hf.co; "
        "media-src 'self' https://*.hf.co; "
        "connect-src 'self' {assistant}; object-src 'none'; base-uri 'none'; form-action 'none'")
 CARD = """---
@@ -45,12 +45,14 @@ def main(out, assistant=""):
         if video is None:
             sys.exit("Seed the sample flight first.")
         (out / "index.json").write_text(json.dumps(db.video_index(conn, video), separators=(",", ":")))
-    page = out / "index.html"
-    html = page.read_text(encoding="utf-8")
     meta = f'  <meta http-equiv="Content-Security-Policy" content="{CSP.format(assistant=assistant)}">\n'
-    html = html.replace('data-edition="server"', f'data-edition="static" data-ask-url="{assistant}"')
-    html = html.replace('  <meta name="viewport"', meta + '  <meta name="viewport"', 1)
-    page.write_text(html, encoding="utf-8", newline="\n")
+    # The mission is the front page. The recorded flight moves to its own page.
+    for source, target in [("index.html", "footage.html"), ("mission.html", "index.html")]:
+        html = (out / source).read_text(encoding="utf-8")
+        html = html.replace('data-edition="server"', f'data-edition="static" data-ask-url="{assistant}"')
+        html = html.replace('  <meta name="viewport"', meta + '  <meta name="viewport"', 1)
+        (out / target).write_text(html, encoding="utf-8", newline="\n")
+    (out / "mission.html").unlink()
     (out / "README.md").write_text(CARD, encoding="utf-8", newline="\n")
     print(f"{sum(f.stat().st_size for f in out.rglob('*') if f.is_file()) / 1e6:.1f} MB in {out}")
 
