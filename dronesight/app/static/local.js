@@ -1,5 +1,6 @@
 // Finds and follows people in a visitor's video on their own device, so the file never leaves it. The
 // result has the same shape as the server's index, so the page's timeline and search work unchanged.
+import { HAZARD_MODELS, HAZARD_SECONDS, hazardFrame, judge, maskPicture } from "./hazards.js";
 import { Tracker, cameraShift } from "./tracker.js";
 
 const MODEL = "person.onnx";
@@ -91,15 +92,19 @@ async function forgetOldFiles() {
   }
 }
 
-async function loadModel() {
+async function loadModel(kind) {
   await forgetOldFiles();
   const adapter = await navigator.gpu?.requestAdapter().catch(() => null);
   const ort = await import(adapter ? "./ort/ort.webgpu.min.mjs" : "./ort/ort.wasm.min.mjs");
   ort.env.wasm.wasmPaths = new URL("ort/", document.baseURI).href;
-  const [binary, model] = await Promise.all([saved(`ort/ort-wasm-simd-threaded${adapter ? ".asyncify" : ""}.wasm`), saved(MODEL)]);
+  const [binary, model, hazardModel] = await Promise.all([
+    saved(`ort/ort-wasm-simd-threaded${adapter ? ".asyncify" : ""}.wasm`), saved(MODEL), kind ? saved(HAZARD_MODELS[kind]) : null,
+  ]);
   ort.env.wasm.wasmBinary = binary;
-  const session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: adapter ? ["webgpu", "wasm"] : ["wasm"] });
-  return { ort, session, device: adapter ? "graphics card" : "processor" };
+  const options = { executionProviders: adapter ? ["webgpu", "wasm"] : ["wasm"] };
+  const session = await ort.InferenceSession.create(new Uint8Array(model), options);
+  const hazardSession = kind ? await ort.InferenceSession.create(new Uint8Array(hazardModel), options) : null;
+  return { ort, session, hazardSession, device: adapter ? "graphics card" : "processor" };
 }
 
 function openVideo(url) {
@@ -128,9 +133,10 @@ const bestRate = (secondsPerFrame, duration) => RATES.find((rate) => rate * dura
 
 // Turns tracks into the server's index: every sample lists who is in view, in fractions of the frame.
 function toIndex(tracks, duration, width, height) {
-  const scaled = tracks.map(({ id, times, boxes }) => ({
+  const scaled = tracks.map(({ id, times, boxes, world }) => ({
     id,
     times,
+    world: world.map(([x, y]) => [x / height, y / height]),
     boxes: boxes.map(([x1, y1, x2, y2]) => [
       Math.round(Math.max(0, x1 / width) * 10000) / 10000, Math.round(Math.max(0, y1 / height) * 10000) / 10000,
       Math.round(Math.min(1, x2 / width) * 10000) / 10000, Math.round(Math.min(1, y2 / height) * 10000) / 10000,
@@ -147,14 +153,14 @@ function toIndex(tracks, duration, width, height) {
   return { duration, samples, tracks: scaled, reach: 1 };
 }
 
-export async function analyse(file, onProgress) {
+export async function analyse(file, kind, onProgress) {
   const url = URL.createObjectURL(file);
   try {
     const video = await openVideo(url);
     const { duration, videoWidth, videoHeight } = video;
     if (duration > MAX_SECONDS) throw new Error("Please choose a video of up to 3 minutes.");
-    onProgress(0, "Getting the model ready. The first time downloads about 70 MB.");
-    const { ort, session, device } = await loadModel();
+    onProgress(0, `Getting the models ready. The first time downloads about ${kind === "flood" ? 165 : kind === "fire" ? 105 : 70} MB.`);
+    const { ort, session, hazardSession, device } = await loadModel(kind);
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = SIZE;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -170,6 +176,8 @@ export async function analyse(file, onProgress) {
     const toVideoPixels = videoWidth / THUMBNAIL_WIDTH;
 
     const tracker = new Tracker();
+    const hazards = [];
+    let nextHazard = 0;
     let rate = FIRST_RATE;
     let previous = null;
     let time = 0;
@@ -181,6 +189,10 @@ export async function analyse(file, onProgress) {
       const grey = greyThumbnail(smallCtx, video, small.width, small.height);
       const shift = previous ? cameraShift(previous, grey, small.width, small.height) : { x: 0, y: 0 };
       previous = grey;
+      if (kind && time >= nextHazard) {
+        hazards.push({ ...await hazardFrame(kind, ort, hazardSession, video), t: time });
+        nextHazard = time + HAZARD_SECONDS;
+      }
       tracker.update(time, decode(results[session.outputNames[0]], frame), { x: shift.x * toVideoPixels, y: shift.y * toVideoPixels });
       done += 1;
       if (done === 1) started = performance.now();  // the first frame sets up the model, so it says little about the rest
@@ -191,7 +203,12 @@ export async function analyse(file, onProgress) {
       onProgress(Math.min(1, time / duration), `Following people on your ${device}, ${timeLeft(left)} Please keep this page open.`);
       await new Promise((resolve) => { setTimeout(resolve); });  // lets the page repaint between frames
     }
-    return { url, index: toIndex(tracker.finish(), duration, videoWidth, videoHeight) };
+    const index = toIndex(tracker.finish(), duration, videoWidth, videoHeight);
+    if (kind) {
+      Object.assign(index, { kind, aspect: videoWidth / videoHeight, people: judge(index.tracks, hazards, kind) });
+      index.masks = hazards.map((hazard) => ({ t: hazard.t, picture: maskPicture(hazard, kind) }));
+    }
+    return { url, index };
   } catch (error) {
     URL.revokeObjectURL(url);
     throw error;

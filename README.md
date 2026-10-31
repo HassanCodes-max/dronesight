@@ -1,30 +1,42 @@
 # DroneSight
 
-Add a drone video and every person in it is found and followed, on your own device.
+Add a drone video of a flood or fire. Every person is followed, ranked by danger with the reasons shown, and placed on the map when the drone's position is known. All of it runs on your own device.
 
-After a disaster, teams come back with hours of drone video and someone has to watch all of it. DroneSight finds each person, keeps following them as they and the drone move, and lets you jump to the moments that matter. The video is analysed in your browser and is never uploaded.
+After a disaster, teams come back with hours of drone video and someone has to watch all of it and decide who needs help first. DroneSight does that first pass. The video is analysed in your browser and is never uploaded.
 
 **Live demo:** https://hassanali0987654-dronesight.static.hf.space
 
-**This is a research demo, not a rescue system.** In a real emergency, call your local emergency services.
+**This is a research demo, not a rescue system.** The models miss people, the risk rules have not been validated by emergency responders, and locations are estimates. In a real emergency, call your local emergency services.
 
-**Status:** finding and following people on a visitor's own video is live on a free static site with no server. Flagging who is in danger, map locations and an assistant that explains them are being rebuilt for real videos. An earlier simulated mission was retired, and its code remains in the repository.
+**Status:** live on a free static site with no server. An earlier simulated mission was retired from the site, and its code remains in the repository. Telegram alerts are written but switched off.
 
 ## How it works
 
-The mission runs in the visitor's browser. Models cannot run in real time on a free static host, so they run once on Kaggle and the site replays their real output.
-
 ```
-Disaster photos (C2A: real aerial scenes with people added)
+Your video, in your browser
    |
-Kaggle CPU job: YOLO11s finds people, a U-Net traces water, YOLO11s and colour trace flames
+YOLO11s at 1280: finds people, on the graphics card through WebGPU or the processor through WebAssembly
    |
-Mission data: each person's hazard, depth into it, distance to safety and location
+tracker.js: removes the drone's motion and follows each person
    |
-Browser: flight simulator with a task queue, risk ranking, alerts to headquarters
+U-Net (flood) or YOLO11s plus flame colour (fire): finds the hazard every 2 seconds
+   |
+risk.js: ranks each person at their worst moment, with reasons
+   |
+Drone position or DJI .SRT log: turns picture positions into latitude and longitude
+   |
+Cloudflare Worker: explains one finding in plain language, from measurements only
 ```
 
-**Risk ranking** uses fixed rules in `dronesight/app/rescue.py`, so every decision can be explained. Being in fire or water counts most, then how far the person is from safety, then being near a hazard, then being alone. Someone 3 m or more into water is critical, because they cannot just step out. Dry land beside water is a watch, while dry land beside flames is high, because fire spreads and burns at a distance. Smoke alone is only a watch, because its boxes are coarse. The rules are written by hand, not learned from responders' decisions.
+**Risk ranking** uses fixed rules in `dronesight/app/static/risk.js`, so every decision can be explained. Being in fire or water counts most, then how far the person is from safety, then being near a hazard, being alone and not moving. Someone 3 m or more into water is critical, because they cannot just step out. Dry land beside water is a watch, while dry land beside flames is high, because fire spreads and burns at a distance. Smoke alone is only a watch, because its boxes are coarse. The rules are written by hand, not learned from responders' decisions.
+
+**Distances** use each person's own height as the ruler, because an ordinary video has no scale. They are rough, and worse when the camera looks straight down, where people appear short.
+
+**Location** needs the drone's position, height, heading and camera tilt, typed in or read from a DJI `.SRT` flight log. An ordinary video has no GPS, so without these the page says the location is unknown instead of guessing. The maths assumes flat ground, and each result shows an error range that grows with tilt. Typed positions assume the drone stayed there. The flight log parser was tested on written examples of the two DJI formats, not on a real log.
+
+**The shortcut** is the straight line to the nearest safe ground, measured on the hazard mask, plus a Google Maps directions link from the team to the person. Neither knows whether a route is passable, and the assistant is told never to say a route is safe.
+
+**The assistant** gets measurements, not text. The worker checks every field against fixed values and ranges and writes the findings itself, so nothing a visitor types reaches the model.
 
 The recorded flight page has its own pipeline:
 
@@ -230,6 +242,7 @@ The source code is under the MIT licence. It does not cover images, video or dat
 
 ## Update log
 
+- Added danger ranking, map locations and plain-language explanations on visitors' own videos, all in the browser.
 - The product moved from the simulated mission to visitors' own videos. Tracking was added in the browser, and the browser model moved back to the full 1280 version after a real video showed the 960 version missing most people.
 - Added analysis of a visitor's own video in their browser, with no server. Missions moved to the largest source photos, up to 3600 pixels wide against as little as 230, because many scenes were blurry when shown large. The assistant now reads its facts from the site, so new data needs no worker update.
 - Missions moved to the Experiment 6 water model, and the people model was scored once on test data. The site now quotes the test figures, which are lower for VisDrone and higher for HERIDAL than the validation ones.

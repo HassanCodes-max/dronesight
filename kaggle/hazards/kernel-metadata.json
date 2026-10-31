@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-hazard-export",
+  "title": "DroneSight Hazard Export",
+  "code_file": "export_hazards.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-water-mixed", "hassanagddsbdxfg/dronesight-experiment-4"]
+}

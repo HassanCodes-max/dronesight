@@ -20,7 +20,7 @@ from deploy.build_worker import topics  # noqa: E402
 from dronesight.app import db  # noqa: E402
 
 STATIC = ROOT / "dronesight/app/static"
-BROWSER_MODEL = ROOT / "models/person.onnx"
+BROWSER_MODELS = [ROOT / "models" / name for name in ("person.onnx", "water.onnx", "fire.onnx")]
 # Hugging Face redirects large files to its CDN, so they need that one extra source. Blobs are a
 # visitor's own video, and the runtime needs to compile WebAssembly.
 CSP = ("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: https://*.hf.co; "
@@ -45,7 +45,8 @@ def main(out, assistant=""):
     shutil.rmtree(out, ignore_errors=True)
     shutil.copytree(STATIC, out)
     shutil.copy(ROOT / "demo/flight.mp4", out / "flight.mp4")
-    shutil.copy(BROWSER_MODEL, out / BROWSER_MODEL.name)
+    for model in BROWSER_MODELS:
+        shutil.copy(model, out / model.name)
     shutil.copytree(ROOT / "vendor/ort", out / "ort")
     with db.transaction() as conn:
         video = conn.execute("SELECT * FROM videos WHERE id = 'Sample flight' AND status = 'ready'").fetchone()

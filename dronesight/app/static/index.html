@@ -55,6 +55,29 @@
       </section>
 
       <aside class="side">
+        <section id="risk-panel" class="panel risk-panel" aria-labelledby="risk-title" hidden>
+          <h2 id="risk-title">People in danger</h2>
+          <p id="risk-summary" class="answer"></p>
+          <details id="where" class="where">
+            <summary>Add the drone's position for map locations</summary>
+            <form id="where-form">
+              <p class="status">An ordinary video has no GPS, so these come from your flight app. Tilt is 0 for straight down.</p>
+              <div class="fields">
+                <label>Drone latitude <input id="drone-lat" inputmode="decimal" required></label>
+                <label>Drone longitude <input id="drone-lon" inputmode="decimal" required></label>
+                <label>Height, metres <input id="drone-height" inputmode="decimal" required></label>
+                <label>Heading, degrees <input id="drone-heading" inputmode="decimal" value="0"></label>
+                <label>Camera tilt, degrees <input id="drone-tilt" inputmode="decimal" value="0"></label>
+                <label>Your team's latitude <input id="team-lat" inputmode="decimal"></label>
+                <label>Your team's longitude <input id="team-lon" inputmode="decimal"></label>
+              </div>
+              <button class="primary" type="submit">Show locations</button>
+              <p id="where-error" class="error" role="alert"></p>
+            </form>
+          </details>
+          <ol id="risk-list" class="risk-list"></ol>
+        </section>
+
         <section class="panel" aria-labelledby="results-title">
           <h2 id="results-title">Busiest moments</h2>
           <p id="answer" class="answer" role="status"></p>
@@ -65,6 +88,15 @@
           <h2 id="flights-title">Flights</h2>
           <ul id="videos" class="video-list"></ul>
           <div id="upload-area">
+            <fieldset id="kind" class="kind" hidden>
+              <legend>What is happening in the video?</legend>
+              <label><input type="radio" name="kind" value="" checked> Just follow people</label>
+              <label><input type="radio" name="kind" value="flood"> Flood</label>
+              <label><input type="radio" name="kind" value="fire"> Fire</label>
+            </fieldset>
+            <label id="log-label" class="log" hidden>Drone flight log, if you have one (DJI .SRT)
+              <input id="log" type="file" accept=".srt,.SRT">
+            </label>
             <label id="drop" class="drop">
               <input id="file" type="file" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv">
               <strong>Add your own flight</strong>

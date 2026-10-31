@@ -12,7 +12,7 @@ const REQUESTS_PER_MINUTE = 8;
 const ALERTS_PER_MINUTE = 3;
 const REFUSAL = "I only answer questions about DroneSight.";
 // Prompt rules alone do not stop a model repeating them, so replies are checked too.
-const LEAK = /you answer questions about dronesight|use only the facts|^\s*rules:|facts:|system prompt|scene descriptions come from/im;
+const LEAK = /you explain one finding|you answer questions about dronesight|use only the facts|^\s*rules:|facts:|system prompt|scene descriptions come from/im;
 
 const RULES = `You answer questions about DroneSight, a research demo of a drone that finds people in danger.
 Use only the FACTS below. Rules:
@@ -27,6 +27,18 @@ Use only the FACTS below. Rules:
 - This is a demo. In a real emergency, tell people to contact local emergency services.
 
 FACTS:
+`;
+
+const EXPLAIN_RULES = `You explain one finding from DroneSight, a research demo that analysed a drone video, to someone planning a rescue.
+Use only the FINDINGS below. Rules:
+- Answer in at most 4 short sentences of plain text.
+- Say where the person is, why they were flagged, the shortest way out of the danger, and how far the team is, when the FINDINGS give these.
+- All distances and locations are estimates, so say "about".
+- You cannot see roads, bridges or the ground. Never name a place or a route, and never say a route is safe. Tell the team to check the route themselves.
+- If the location is unknown, say so.
+- End with: "In a real emergency, call your local emergency services."
+
+FINDINGS:
 `;
 
 const FACTS_URL = `${ALLOWED_ORIGIN}/facts.json`;
@@ -74,8 +86,44 @@ function reply(status, body, origin) {
   });
 }
 
-async function answer(env, question, topic) {
-  const messages = [{ role: "system", content: RULES + await currentFacts(topic) }, { role: "user", content: question }];
+const within = (value, low, high) => typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
+const optional = (value, low, high) => value === null || within(value, low, high);
+const DIRECTION = /^(north|north-east|east|south-east|south|south-west|west|north-west)$|^towards the (top|bottom|left|right|top left|top right|bottom left|bottom right) of the picture$/;
+
+// The page sends measurements, and every field is checked and worded here, so no visitor text reaches the model.
+function findings(body) {
+  const { hazard, level, inside, depthM, distanceM, exit, alone, still, latitude, longitude, errorM, teamM, teamDirection } = body ?? {};
+  const valid = ["flood", "fire"].includes(hazard) && ["CRITICAL", "HIGH"].includes(level)
+    && ["flood water", "fire", "smoke", "none"].includes(inside) && within(depthM, 0, 5000) && optional(distanceM, 0, 5000)
+    && (exit === null || (typeof exit === "string" && DIRECTION.test(exit))) && typeof alone === "boolean" && typeof still === "boolean"
+    && optional(latitude, -90, 90) && optional(longitude, -180, 180) && optional(errorM, 0, 100000) && optional(teamM, 0, 1000000)
+    && (teamDirection === null || (typeof teamDirection === "string" && DIRECTION.test(teamDirection)));
+  if (!valid) return null;
+  const lines = [`Disaster: ${hazard}`, `Danger level: ${level}`];
+  lines.push(inside === "none" ? "Not standing in the hazard" : `Standing in ${inside}`);
+  if (distanceM !== null) lines.push(`About ${distanceM} m from the ${hazard === "flood" ? "flood water" : "fire"}`);
+  if (exit !== null && depthM > 0) lines.push(`Shortest way out of the danger: about ${depthM} m ${exit}`);
+  if (alone) lines.push("Alone, with nobody nearby");
+  if (still) lines.push("Has not moved during the video");
+  lines.push(latitude === null || longitude === null ? "Location: unknown, because the drone's position was not given"
+    : `Estimated location: ${latitude}, ${longitude}, within about ${errorM} m`);
+  if (teamM !== null && teamDirection !== null) lines.push(`The person is about ${teamM} m to the ${teamDirection} of the rescue team, in a straight line`);
+  return lines.join("\n");
+}
+
+async function handleExplain(body, env, ip, origin) {
+  if (!allowed(ip, REQUESTS_PER_MINUTE)) return reply(429, { error: "Too many questions. Please wait a minute." }, origin);
+  const measured = findings(body);
+  if (!measured) return reply(422, { error: "That finding could not be read." }, origin);
+  const text = await generate(env, [{ role: "system", content: EXPLAIN_RULES + measured }, { role: "user", content: "Explain this finding." }]);
+  return text ? reply(200, { answer: text }, origin) : reply(503, { error: "The assistant is unavailable right now." }, origin);
+}
+
+const answer = async (env, question, topic) => generate(env, [
+  { role: "system", content: RULES + await currentFacts(topic) }, { role: "user", content: question },
+]);
+
+async function generate(env, messages) {
   for (const model of MODELS) {
     try {
       const result = await env.AI.run(model, { messages, max_tokens: MAX_ANSWER_TOKENS, temperature: 0.2 });
@@ -119,7 +167,9 @@ export default {
     if (request.method !== "POST") return reply(405, { error: "Use POST." }, origin);
     const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
     const body = await request.json().catch(() => null);
-    if (new URL(request.url).pathname === "/alert") return handleAlert(body, env, ip, origin);
+    const { pathname } = new URL(request.url);
+    if (pathname === "/alert") return handleAlert(body, env, ip, origin);
+    if (pathname === "/explain") return handleExplain(body, env, ip, origin);
     if (!allowed(ip, REQUESTS_PER_MINUTE)) return reply(429, { error: "Too many questions. Please wait a minute." }, origin);
     const question = typeof body?.question === "string" ? body.question.trim() : "";
     if (!question || question.length > MAX_QUESTION) return reply(422, { error: "Please ask a shorter question." }, origin);

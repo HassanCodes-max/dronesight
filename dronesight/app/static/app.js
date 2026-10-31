@@ -1,6 +1,7 @@
 // All text from the server or the user goes through textContent, never innerHTML.
 import { analyse } from "./local.js";
 import { findMoments, parse } from "./search.js";
+import { between, exitDirection, locate, parseFlightLog } from "./risk.js";
 import { boxAt } from "./tracker.js";
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +18,11 @@ const SAMPLE_REACH_SECONDS = 0.6;  // a sample stands for the video this long af
 const BAR_WIDTH = 4;
 const BOX_COLOUR = "#ffd84d";
 const BOX_EDGE = "rgba(0, 0, 0, 0.75)";
+const LEVEL_COLOURS = { CRITICAL: "#ff5a4f", HIGH: "#ff9f40", WATCH: "#ffd84d", CLEAR: "#b3bec9" };
+const SHOWN_LEVELS = ["CRITICAL", "HIGH"];
+const MAX_SHOWN = 40;
+const DEFAULT_FOV = 84;  // most consumer drone cameras
+const EMERGENCY_NOTICE = "In a real emergency, call your local emergency services.";
 const ID_SIZE = 11;
 const ID_MIN_BOX = 22;  // on-screen pixels, so tiny people do not disappear under their numbers
 const BAR_COLOUR = "#5f7082";
@@ -25,6 +31,10 @@ const PLAYHEAD_COLOUR = "#f2f5f8";
 const player = $("player");
 let videos = [];
 let localVideo = null;  // a visitor's own video in the static edition
+let levels = new Map();  // each person's danger, by track
+let drone = null;  // where the visitor says the drone was
+let team = null;
+let flightLog = [];
 let selected = null;
 let index = null;
 let matches = new Set();
@@ -261,12 +271,16 @@ function drawBoxes() {
   const height = player.videoHeight * fit;
   const left = (stageWidth - width) / 2;
   const top = (stageHeight - height) / 2;
-  for (const [colour, lineWidth] of [[BOX_EDGE, 3], [BOX_COLOUR, 1.5]]) {
-    ctx.strokeStyle = colour;
-    ctx.lineWidth = lineWidth;
-    for (const { box: [x1, y1, x2, y2] } of found) {
-      ctx.strokeRect(left + x1 * width, top + y1 * height, (x2 - x1) * width, (y2 - y1) * height);
-    }
+  const mask = index.masks?.find((item) => Math.abs(item.t - player.currentTime) <= 1);
+  if (mask) ctx.drawImage(mask.picture, left, top, width, height);
+  for (const { id, box: [x1, y1, x2, y2] } of found) {
+    const rectangle = [left + x1 * width, top + y1 * height, (x2 - x1) * width, (y2 - y1) * height];
+    ctx.strokeStyle = BOX_EDGE;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(...rectangle);
+    ctx.strokeStyle = LEVEL_COLOURS[levels.get(id)] ?? BOX_COLOUR;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(...rectangle);
   }
   ctx.font = `600 ${ID_SIZE}px system-ui, sans-serif`;
   ctx.fillStyle = BOX_COLOUR;
@@ -309,9 +323,134 @@ function playbackLoop() {
   requestAnimationFrame(playbackLoop);
 }
 
+function droneAt(time) {
+  if (!flightLog.length) return drone;
+  const entry = flightLog.reduce((best, item) => (Math.abs(item.t - time) < Math.abs(best.t - time) ? item : best));
+  return { fov: DEFAULT_FOV, heading: entry.heading ?? 0, tilt: entry.tilt ?? 0, ...drone, ...entry, height: entry.height ?? drone?.height };
+}
+
+function whereIs(person) {
+  const position = droneAt(person.t);
+  return position?.height ? locate(person.feet[0], person.feet[1], position, index.aspect) : null;
+}
+
+const mapsLink = ({ latitude, longitude }) => (team
+  ? `https://www.google.com/maps/dir/?api=1&origin=${team.latitude},${team.longitude}&destination=${latitude},${longitude}&travelmode=walking`
+  : `https://www.google.com/maps?q=${latitude},${longitude}`);
+
+function findings(person, place) {
+  const position = droneAt(person.t);
+  const fromTeam = team && place ? between(team, place) : null;
+  return {
+    hazard: index.kind,
+    level: person.level,
+    inside: person.hazard ?? "none",
+    depthM: Math.round(person.depthM),
+    distanceM: person.distanceM === null ? null : Math.round(person.distanceM),
+    exit: person.exit ? exitDirection(person.exit, position?.heading ?? null) : null,
+    alone: person.alone,
+    still: person.still,
+    latitude: place ? Number(place.latitude.toFixed(6)) : null,
+    longitude: place ? Number(place.longitude.toFixed(6)) : null,
+    errorM: place?.errorM ?? null,
+    teamM: fromTeam?.metres ?? null,
+    teamDirection: fromTeam?.direction ?? null,
+  };
+}
+
+async function explain(person, place, target, button) {
+  button.disabled = true;
+  target.textContent = "Thinking…";
+  try {
+    const send = () => fetch(`${ASK_URL}/explain`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(findings(person, place)),
+    });
+    const response = await send().catch(send);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "The assistant is unavailable right now.");
+    // The model sometimes drops this line, so the page adds it rather than trusting the model.
+    const answer = body.answer.includes(EMERGENCY_NOTICE) ? body.answer : `${body.answer} ${EMERGENCY_NOTICE}`;
+    target.textContent = `Written by a small language model, so trust the numbers above over its wording. ${answer}`;
+  } catch (error) {
+    target.textContent = error instanceof TypeError ? "The assistant could not be reached. Please try again." : error.message;
+  }
+  button.disabled = false;
+}
+
+function jumpToPerson(person) {
+  player.pause();
+  player.currentTime = person.t;
+  $("seek").value = person.t;
+  draw();
+}
+
+function riskCard(person) {
+  const item = document.createElement("li");
+  item.className = `risk ${person.level}`;
+  const title = document.createElement("strong");
+  title.textContent = `${person.level}: person ${person.id} at ${clock(person.t)}`;
+  const why = document.createElement("p");
+  why.textContent = person.reasons.join(", ");
+  item.append(title, why);
+  const place = whereIs(person);
+  const location = document.createElement("p");
+  if (place) {
+    location.textContent = `${place.latitude.toFixed(6)}, ${place.longitude.toFixed(6)}, estimated, within about ${place.errorM} m`;
+  } else {
+    location.className = "quiet-text";
+    location.textContent = "Location unknown. Add the drone's position to work it out.";
+  }
+  item.append(location);
+  if (person.exit && person.depthM >= 1) {
+    const out = document.createElement("p");
+    out.textContent = `Shortest way out: about ${Math.round(person.depthM)} m ${exitDirection(person.exit, droneAt(person.t)?.heading ?? null)}`;
+    item.append(out);
+  }
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const show = document.createElement("button");
+  show.type = "button";
+  show.textContent = "Show in video";
+  show.addEventListener("click", () => jumpToPerson(person));
+  actions.append(show);
+  if (place) {
+    const link = document.createElement("a");
+    link.href = mapsLink(place);
+    link.rel = "noopener noreferrer";
+    link.target = "_blank";
+    link.textContent = team ? "Directions in Google Maps" : "Open in Google Maps";
+    actions.append(link);
+  }
+  const explained = document.createElement("p");
+  explained.className = "explained";
+  if (ASK_URL) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Explain";
+    button.addEventListener("click", () => explain(person, place, explained, button));
+    actions.append(button);
+  }
+  item.append(actions, explained);
+  return item;
+}
+
+function renderRisk() {
+  const list = index?.people;
+  $("risk-panel").hidden = !list;
+  levels = new Map((list ?? []).map((person) => [person.id, person.level]));
+  if (!list) return;
+  const shown = list.filter((person) => SHOWN_LEVELS.includes(person.level));
+  const count = (level) => list.filter((person) => person.level === level).length;
+  $("risk-summary").textContent = `About ${people(list.length)} followed: ${count("CRITICAL")} critical, ${count("HIGH")} high, ${count("WATCH")} watch. Rules, not a trained model, and the models can be wrong.`;
+  $("risk-list").replaceChildren(...shown.slice(0, MAX_SHOWN).map(riskCard));
+}
+
 async function selectVideo(video) {
   selected = video;
   index = null;
+  renderRisk();
   renderVideos();
   setResults("Busiest moments", "", [], []);
   player.pause();
@@ -329,6 +468,7 @@ async function selectVideo(video) {
     const loaded = video.local?.index ?? await (STATIC_EDITION ? fetch("index.json").then((r) => r.json()) : api(`${base}/index`));
     if (selected !== video) return;
     index = loaded;
+    renderRisk();
     player.src = video.local?.url ?? (STATIC_EDITION ? "flight.mp4" : `${base}/stream`);
     $("seek").max = index.duration;
     showBusiest();
@@ -344,10 +484,12 @@ async function analyseHere(file) {
   if (localVideo?.local) URL.revokeObjectURL(localVideo.local.url);
   const status = $("upload-status");
   localVideo = { id: "local", title: file.name, status: "processing", progress: 0, is_demo: 1 };
+  const kind = document.querySelector("input[name=kind]:checked").value;
+  flightLog = $("log").files[0] ? parseFlightLog(await $("log").files[0].text()) : [];
   await selectVideo(localVideo);
   await refreshVideos();
   try {
-    const local = await analyse(file, (progress, message) => {
+    const local = await analyse(file, kind, (progress, message) => {
       localVideo.progress = progress;
       status.textContent = message;
       renderVideos();
@@ -434,6 +576,28 @@ $("auth-form").addEventListener("submit", async (event) => {
   }
 });
 
+function numberIn(id, low, high) {
+  const value = Number($(id).value.trim());
+  return $(id).value.trim() && value >= low && value <= high ? value : null;
+}
+
+$("where-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const [latitude, longitude] = [numberIn("drone-lat", -90, 90), numberIn("drone-lon", -180, 180)];
+  const height = numberIn("drone-height", 1, 1000);
+  const [heading, tilt] = [numberIn("drone-heading", -360, 360), numberIn("drone-tilt", 0, 89)];
+  if (latitude === null || longitude === null || height === null || heading === null || tilt === null) {
+    $("where-error").textContent = "Please check the numbers. Height is 1 to 1000 m, and tilt is 0 to 89 degrees.";
+    return;
+  }
+  $("where-error").textContent = "";
+  drone = { latitude, longitude, height, heading, tilt, fov: DEFAULT_FOV };
+  const [teamLatitude, teamLongitude] = [numberIn("team-lat", -90, 90), numberIn("team-lon", -180, 180)];
+  team = teamLatitude === null || teamLongitude === null ? null : { latitude: teamLatitude, longitude: teamLongitude };
+  $("where").open = false;
+  renderRisk();
+});
+
 $("ask").addEventListener("submit", (event) => {
   event.preventDefault();
   const question = $("question").value.trim();
@@ -513,6 +677,8 @@ drop.addEventListener("drop", (event) => {
 (async () => {
   if (STATIC_EDITION) {
     $("account").hidden = true;
+    $("kind").hidden = false;
+    $("log-label").hidden = false;
     $("upload-hint").textContent = "MP4 or MOV, up to 3 minutes. It stays on your device and nothing is uploaded. Longer videos take several minutes.";
   } else {
     const me = await api("api/me");

@@ -77,11 +77,13 @@ export class Tracker {
     this.closed = [];
     this.nextId = 1;
     this.time = 0;
+    this.drift = [0, 0];  // how far the picture has moved in total, to tell walking from camera motion
   }
 
   update(time, detections, shift) {
     const elapsed = time - this.time;
     this.time = time;
+    this.drift = [this.drift[0] + shift.x, this.drift[1] + shift.y];
     for (const track of this.open) {
       // The picture moved, so everyone in it moved with it.
       track.last = [track.last[0] + shift.x, track.last[1] + shift.y, track.last[2] + shift.x, track.last[3] + shift.y];
@@ -102,7 +104,7 @@ export class Tracker {
 
   start(detection, time) {
     const box = detection.box;
-    this.open.push({ id: this.nextId, last: box, expected: centre(box), velocity: [0, 0], times: [time], boxes: [box], hits: 1 });
+    this.open.push({ id: this.nextId, last: box, expected: centre(box), velocity: [0, 0], times: [time], boxes: [box], world: [this.onGround(box)], hits: 1 });
     this.nextId += 1;
   }
 
@@ -114,14 +116,20 @@ export class Tracker {
     track.last = detection.box;
     track.times.push(time);
     track.boxes.push(detection.box);
+    track.world.push(this.onGround(detection.box));
     track.hits += 1;
+  }
+
+  onGround(box) {
+    const [x, y] = centre(box);
+    return [x - this.drift[0], y - this.drift[1]];
   }
 
   finish() {
     const tracks = [...this.closed, ...this.open].filter(
       (track) => track.hits >= MIN_HITS && track.times.at(-1) - track.times[0] >= MIN_SECONDS_SEEN,
     );
-    return tracks.map((track, order) => ({ id: order + 1, times: track.times, boxes: smooth(track.boxes) }));
+    return tracks.map((track, order) => ({ id: order + 1, times: track.times, boxes: smooth(track.boxes), world: track.world }));
   }
 }
 
