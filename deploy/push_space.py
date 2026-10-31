@@ -1,6 +1,6 @@
 """Publish the site to a Hugging Face Docker Space.
 
-    huggingface-cli login
+    hf auth login
     python deploy/push_space.py <your-hf-username>/dronesight
 
 Only an explicit allowlist is uploaded, so local data and secrets cannot be published by accident.

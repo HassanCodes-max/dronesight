@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-experiment-3",
+  "title": "DroneSight Experiment 3",
+  "code_file": "tune_inference.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["mariannaesposito/heridal-4k"],
+  "competition_sources": [],
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-2"]
+}

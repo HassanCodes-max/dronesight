@@ -60,7 +60,7 @@ Run the worker and the server in separate terminals, then open http://127.0.0.1:
 ## Deploy
 
 ```
-huggingface-cli login
+hf auth login
 python deploy/push_space.py <your-hf-username>/dronesight
 ```
 
