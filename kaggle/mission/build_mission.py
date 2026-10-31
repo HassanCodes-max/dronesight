@@ -27,7 +27,8 @@ SEED = 0
 TEST_FRACTION = VAL_FRACTION = 0.15
 SCENES_PER_MISSION = 9
 CANDIDATES = 120
-MIN_PEOPLE, MAX_PEOPLE = 4, 30
+MIN_PEOPLE, MAX_PEOPLE = 5, 14
+FLOOD_SHARE = 0.4  # partly flooded scenes give the ranking real differences to show
 PERSON_CONF, HAZARD_CONF = 0.25, 0.25
 PERSON_IMGSZ, FLOOD_IMGSZ, FIRE_IMGSZ = 960, 960, 640
 IMAGE_WIDTH = 960
@@ -129,7 +130,10 @@ for mission, group in [("flood", "flood_image"), ("fire", "fire_image")][:2 if f
         hazard = sum(cv2.contourArea(np.array(o, np.float32)) for o in scene["flood"]) if mission == "flood" else len(scene["fire"]) + len(scene["smoke"])
         scored.append((hazard, len(scene["people"]), scene, image))
     # Scenes where the hazard model found something, so the mission has dangers to respond to.
-    scored.sort(key=lambda item: (item[0] > 0, item[1]), reverse=True)
+    if mission == "flood":
+        scored.sort(key=lambda item: abs(item[0] - FLOOD_SHARE))
+    else:
+        scored.sort(key=lambda item: item[0], reverse=True)
     chosen = []
     for hazard, _, scene, image in scored[:SCENES_PER_MISSION]:
         scale = IMAGE_WIDTH / image.shape[1]

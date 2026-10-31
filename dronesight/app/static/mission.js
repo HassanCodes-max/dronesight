@@ -239,11 +239,13 @@ function drawCamera() {
     focusY = 0.5 + ((state.lock.box[1] + state.lock.box[3]) / 2 - 0.5) * ease;
     $("lock").textContent = `${state.lock.level}: ${state.lock.reasons.join(", ")}`;
   }
-  const scaled = Math.max(width / image.width, height / image.height) * zoom;
+  // The whole scene stays in view, so nobody the drone found is cropped out.
+  const scaled = Math.min(width / image.width, height / image.height) * zoom;
   const drawWidth = image.width * scaled;
   const drawHeight = image.height * scaled;
-  const x = Math.min(0, Math.max(width - drawWidth, width / 2 - focusX * drawWidth));
-  const y = Math.min(0, Math.max(height - drawHeight, height / 2 - focusY * drawHeight));
+  const place = (size, drawn, focus) => (drawn <= size ? (size - drawn) / 2 : Math.min(0, Math.max(size - drawn, size / 2 - focus * drawn)));
+  const x = place(width, drawWidth, focusX);
+  const y = place(height, drawHeight, focusY);
   ctx.drawImage(image, x, y, drawWidth, drawHeight);
   const reveal = state.reveal[sector.id] ?? 0;
   drawOverlays(ctx, sector, x, y, drawWidth, drawHeight, reveal);

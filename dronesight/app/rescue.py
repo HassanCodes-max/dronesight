@@ -11,12 +11,14 @@ METRES_PER_DEGREE = 111_320
 GPS_ERROR_M = 5.0  # typical consumer drone GPS
 TILT_ERROR_DEGREES = 2.0  # how far a gimbal may be from pointing straight down
 
-IN_HAZARD_POINTS = 60
-NEAR_POINTS = ((5, 50), (20, 30), (50, 10))  # metres from the hazard, points
+HAZARD_POINTS = {"fire": 65, "flood water": 45, "smoke": 30}
+DEEP_POINTS = 20  # someone far from safe ground cannot simply walk out
+DEEP_METRES = 5
+NEAR_POINTS = ((5, 40), (20, 25), (50, 10))  # metres from the hazard, points, always below being in it
 ALONE_POINTS = 15
 STILL_POINTS = 15
 ALONE_RADIUS_M = 10
-LEVELS = ((60, "CRITICAL"), (30, "HIGH"), (10, "WATCH"), (0, "CLEAR"))
+LEVELS = ((65, "CRITICAL"), (30, "HIGH"), (10, "WATCH"), (0, "CLEAR"))
 UNCERTAIN_BELOW = 0.5
 
 
@@ -45,6 +47,7 @@ class Person:
     y: float
     confidence: float
     hazard: str | None = None  # what they are standing in
+    depth_m: float = 0  # how far inside it, to the nearest safe ground
     distance_m: float | None = None  # to the nearest hazard
     nearest_hazard: str | None = None
     neighbours: int = 0  # people within ALONE_RADIUS_M
@@ -77,8 +80,11 @@ def assess(person):
     score = 0
     reasons = []
     if person.hazard:
-        score += IN_HAZARD_POINTS
+        score += HAZARD_POINTS[person.hazard]
         reasons.append(f"in {person.hazard}")
+        if person.depth_m >= DEEP_METRES:
+            score += DEEP_POINTS
+            reasons.append(f"about {round(person.depth_m)} m from safe ground")
     elif person.distance_m is not None:
         for metres, points in NEAR_POINTS:
             if person.distance_m <= metres:

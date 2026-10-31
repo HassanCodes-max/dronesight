@@ -45,18 +45,19 @@ def rasterise(scene, height):
 
 
 def hazard_at(masks, x, y, metres_per_cell):
-    """What the point stands in, otherwise the nearest hazard and its distance in metres."""
+    """What the point stands in and how deep, otherwise the nearest hazard and its distance in metres."""
     height, width = next(iter(masks.values())).shape
     column, row = min(width - 1, int(x * width)), min(height - 1, int(y * height))
     nearest, distance = None, None
     for name, mask in masks.items():
         if mask[row, column]:
-            return name, None, None
+            depth = cv2.distanceTransform(mask, cv2.DIST_L2, 5)[row, column]
+            return name, float(depth * metres_per_cell), None, None
         if mask.any():
             cells = cv2.distanceTransform(1 - mask, cv2.DIST_L2, 5)[row, column]
             if distance is None or cells * metres_per_cell < distance:
                 nearest, distance = name, float(cells * metres_per_cell)
-    return None, nearest, distance
+    return None, 0, nearest, distance
 
 
 def build_mission(name, scenes):
@@ -82,8 +83,9 @@ def build_mission(name, scenes):
         for found in scene["people"]:
             x1, y1, x2, y2 = found["box"]
             x, y = (x1 + x2) / 2, y2  # feet touch the ground, so they decide what the person stands in
-            hazard, nearest, distance = hazard_at(masks, x, y, metres_per_cell)
-            person = Person(id=len(people), x=x, y=y, confidence=found["confidence"], hazard=hazard, distance_m=distance, nearest_hazard=nearest)
+            hazard, depth, nearest, distance = hazard_at(masks, x, y, metres_per_cell)
+            person = Person(id=len(people), x=x, y=y, confidence=found["confidence"], hazard=hazard, depth_m=depth,
+                            distance_m=distance, nearest_hazard=nearest)
             people.append(person)
             positions[person.id] = (sector, found["box"], *locate(x, y, telemetry),
                                     east + (x - 0.5) * telemetry.ground_width_m,

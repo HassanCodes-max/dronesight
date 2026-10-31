@@ -56,16 +56,30 @@ def person(person_id=1, **values):
     return Person(id=person_id, x=0.5, y=0.5, confidence=values.pop("confidence", 0.9), **values)
 
 
-def test_person_in_flood_water_outranks_person_near_it():
-    near = person(1, distance_m=4, nearest_hazard="fire", neighbours=3)
-    inside = person(2, hazard="flood water", neighbours=3)
+def test_person_far_from_safe_ground_outranks_person_at_the_edge():
+    edge = person(1, hazard="flood water", depth_m=1, neighbours=3)
+    deep = person(2, hazard="flood water", depth_m=12, neighbours=3)
+    assert [p.id for p in rank([edge, deep])] == [2, 1]
+    assert deep.level == "CRITICAL" and edge.level == "HIGH"
+    assert deep.reasons == ["in flood water", "about 12 m from safe ground"]
+
+
+def test_person_in_fire_is_critical_and_outranks_shallow_water():
+    fire = person(1, hazard="fire", neighbours=3)
+    water = person(2, hazard="flood water", depth_m=1, neighbours=3)
+    assert [p.id for p in rank([water, fire])] == [1, 2]
+    assert fire.level == "CRITICAL"
+
+
+def test_person_in_water_outranks_person_near_it():
+    near = person(1, distance_m=4, nearest_hazard="flood water", neighbours=3)
+    inside = person(2, hazard="flood water", depth_m=1, neighbours=3)
     assert [p.id for p in rank([near, inside])] == [2, 1]
-    assert inside.level == "CRITICAL" and near.level == "HIGH"
 
 
 def test_alone_and_still_raise_priority_and_are_explained():
-    alone = person(1, hazard="flood water", neighbours=0, still=True)
-    grouped = person(2, hazard="flood water", neighbours=4, still=False)
+    alone = person(1, hazard="flood water", depth_m=1, neighbours=0, still=True)
+    grouped = person(2, hazard="flood water", depth_m=1, neighbours=4, still=False)
     assert [p.id for p in rank([grouped, alone])] == [1, 2]
     assert alone.reasons == ["in flood water", "alone", "not moving"]
 
@@ -77,7 +91,7 @@ def test_person_far_from_danger_is_clear_even_if_alone():
 
 def test_unknown_movement_adds_nothing():
     unknown = rank([person(1, hazard="flood water", neighbours=2, still=None)])[0]
-    assert unknown.score == 60 and "not moving" not in unknown.reasons
+    assert unknown.score == 45 and "not moving" not in unknown.reasons
 
 
 def test_uncertain_detection_says_so_and_ties_prefer_the_surer_one():
