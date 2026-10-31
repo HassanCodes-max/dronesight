@@ -14,10 +14,12 @@ from collections import defaultdict
 from pathlib import Path
 
 os.environ["WANDB_MODE"] = "disabled"
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "ultralytics"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "ultralytics", "segmentation-models-pytorch"], check=True)
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
+import segmentation_models_pytorch as smp  # noqa: E402
+import torch  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 
 INPUT = Path("/kaggle/input")
@@ -30,10 +32,13 @@ CANDIDATES = 120
 MIN_PEOPLE, MAX_PEOPLE = 5, 30
 HAZARD_SHARE = {"flood": 0.4, "fire": 0.1}  # partly affected scenes give the ranking real differences to show
 PERSON_CONF, HAZARD_CONF = 0.25, 0.25
-PERSON_IMGSZ, FLOOD_IMGSZ, FIRE_IMGSZ = 960, 960, 640
+PERSON_IMGSZ, FIRE_IMGSZ = 960, 640
+WATER_SIDE = 768  # the long side the water model trained at
+WATER_THRESHOLD = 0.5
+MEAN, STD = np.array([0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225])
 IMAGE_WIDTH = 960
 JPEG_QUALITY = 72
-OUTLINE_EPSILON = 0.004  # polygon simplification, as a share of the outline length
+OUTLINE_TOLERANCE = 0.002  # polygon simplification, as a share of the image
 MIN_REGION = 0.0005  # share of the image; smaller regions are noise
 BOX_PAD = 0.15  # share of a fire box added on each side, so flames at its edge are not cut straight
 
@@ -78,18 +83,31 @@ def unseen_scenes():
     return unseen
 
 
-def simplified(points):
-    """A closed outline of 0 to 1 points with fewer corners, or None if nothing is left of it."""
-    points = points.astype(np.float32).reshape(-1, 1, 2)
-    simple = cv2.approxPolyDP(points, OUTLINE_EPSILON * cv2.arcLength(points, True), True).reshape(-1, 2)
-    return np.round(simple, 4).tolist() if len(simple) >= 3 else None
+def mask_outlines(mask, retrieval):
+    """Closed outlines of 0 to 1 points around each sizeable region of a binary mask."""
+    height, width = mask.shape
+    contours, _ = cv2.findContours(mask, retrieval, cv2.CHAIN_APPROX_SIMPLE)
+    outlines = []
+    for contour in contours:
+        if cv2.contourArea(contour) >= MIN_REGION * height * width:
+            points = (contour.reshape(-1, 2) / [width, height]).astype(np.float32).reshape(-1, 1, 2)
+            simple = cv2.approxPolyDP(points, OUTLINE_TOLERANCE, True).reshape(-1, 2)
+            if len(simple) >= 3:
+                outlines.append(np.round(simple, 4).tolist())
+    return outlines
 
 
 def flood_outlines(model, image):
-    result = model.predict(image, imgsz=FLOOD_IMGSZ, conf=HAZARD_CONF, device="cpu", verbose=False)[0]
-    if result.masks is None:
-        return []
-    return [outline for outline in map(simplified, result.masks.xyn) if outline]
+    """Water outlines, with dry land inside the water kept as holes for an even-odd fill."""
+    height, width = image.shape[:2]
+    scale = WATER_SIDE / max(height, width)
+    size = (round(width * scale / 32) * 32, round(height * scale / 32) * 32)
+    rgb = cv2.cvtColor(cv2.resize(image, size), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+    batch = torch.from_numpy(((rgb - MEAN) / STD).transpose(2, 0, 1)).float()[None]
+    with torch.inference_mode():
+        probability = torch.sigmoid(model(batch))[0, 0].numpy()
+    mask = (cv2.resize(probability, (width, height)) >= WATER_THRESHOLD).astype(np.uint8)
+    return mask_outlines(mask, cv2.RETR_LIST)
 
 
 def flame_outlines(image, boxes):
@@ -101,14 +119,12 @@ def flame_outlines(image, boxes):
         cv2.rectangle(inside, (int((x1 - pad_x) * width), int((y1 - pad_y) * height)),
                       (int((x2 + pad_x) * width), int((y2 + pad_y) * height)), 1, -1)
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    flame = cv2.inRange(hsv, (0, 90, 150), (35, 255, 255)) | cv2.inRange(hsv, (0, 0, 240), (40, 255, 255))
+    flame = cv2.inRange(hsv, (0, 110, 190), (35, 255, 255)) | cv2.inRange(hsv, (0, 0, 240), (40, 255, 255))
     size = max(3, width // 80) | 1
     mask = cv2.morphologyEx(((flame > 0) & (inside > 0)).astype(np.uint8), cv2.MORPH_CLOSE,
                             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    large = [c for c in contours if cv2.contourArea(c) >= MIN_REGION * height * width]
-    return [outline for outline in (simplified(c.reshape(-1, 2) / [width, height]) for c in large) if outline]
+    return mask_outlines(mask, cv2.RETR_EXTERNAL)  # a person pasted into the flames is still in them
 
 
 def fire_regions(model, image):
@@ -132,7 +148,9 @@ def label_count(path):
 
 
 person_model = YOLO(str(mounted("dronesight-experiment-2") / "runs/train_vhc/weights/best.pt"))
-flood_model = YOLO(str(mounted("dronesight-flood") / "runs/flood/weights/best.pt"))
+flood_model = smp.Unet("resnet34", encoder_weights=None, classes=1)
+flood_model.load_state_dict(torch.load(mounted("dronesight-water") / "water_unet.pt", map_location="cpu"))
+flood_model.eval()
 fire_model = YOLO(str(mounted("dronesight-experiment-4") / "runs/fire/weights/best.pt"))
 unseen = unseen_scenes()
 print({name: len(images) for name, images in unseen.items()}, flush=True)

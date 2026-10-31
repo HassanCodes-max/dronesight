@@ -9,5 +9,5 @@
   "enable_internet": true,
   "dataset_sources": ["rgbnihal/c2a-dataset"],
   "competition_sources": [],
-  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-2", "hassanagddsbdxfg/dronesight-flood", "hassanagddsbdxfg/dronesight-experiment-4"]
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-2", "hassanagddsbdxfg/dronesight-water", "hassanagddsbdxfg/dronesight-experiment-4"]
 }

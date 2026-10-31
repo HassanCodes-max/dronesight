@@ -33,9 +33,8 @@ def rasterise(scene, height):
     masks = {}
     for name, key in [("flood water", "flood"), ("fire", "fire")]:
         mask = np.zeros((height, RASTER_WIDTH), np.uint8)
-        for outline in scene[key]:
-            points = (np.array(outline) * [RASTER_WIDTH, height]).astype(np.int32)
-            cv2.fillPoly(mask, [points], 1)
+        if scene[key]:  # one call, so an outline inside another stays a hole of dry land
+            cv2.fillPoly(mask, [(np.array(outline) * [RASTER_WIDTH, height]).astype(np.int32) for outline in scene[key]], 1)
         masks[name] = mask
     smoke = np.zeros((height, RASTER_WIDTH), np.uint8)
     for x1, y1, x2, y2 in scene["smoke"]:

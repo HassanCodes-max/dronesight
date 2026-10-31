@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-water-mixed",
+  "title": "DroneSight Water Mixed",
+  "code_file": "train_water_mixed.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["aletbm/aerial-imagery-dataset-floodnet-challenge", "faizalkarim/flood-area-segmentation"],
+  "competition_sources": [],
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-water"]
+}

@@ -209,12 +209,12 @@ function drawOverlays(ctx, sector, x, y, width, height, reveal) {
   ctx.fill();
   for (const [outlines, fill] of [[sector.flood, FLOOD_FILL], [sector.fire, FIRE_FILL]]) {
     ctx.fillStyle = fill;
+    ctx.beginPath();
     for (const outline of outlines) {
-      ctx.beginPath();
       outline.forEach(([px, py], i) => (i ? ctx.lineTo(x + px * width, y + py * height) : ctx.moveTo(x + px * width, y + py * height)));
       ctx.closePath();
-      ctx.fill();
     }
+    ctx.fill("evenodd");  // an outline inside another is dry land
   }
   ctx.restore();
   for (const person of sector.people) {
