@@ -197,6 +197,7 @@ function fitCanvas(canvas) {
   }
   const ctx = canvas.getContext("2d");
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.imageSmoothingQuality = "high";
   return [ctx, rect.width, rect.height];
 }
 

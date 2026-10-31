@@ -79,7 +79,8 @@ def alerts(mission):
             for person, sector in ranked(mission) if person["level"] == "CRITICAL"}
 
 
-def main(out):
+def topics():
+    """The facts for each topic. The site publishes these, and the worker keeps a copy as a fallback."""
     scene = json.loads((ROOT / "demo/scene.json").read_text(encoding="utf-8"))
     with db.transaction() as conn:
         video = conn.execute("SELECT * FROM videos WHERE id = 'Sample flight' AND status = 'ready'").fetchone()
@@ -87,9 +88,13 @@ def main(out):
             sys.exit("Seed the sample flight first.")
         index = db.video_index(conn, video)
     missions = json.loads(MISSIONS.read_text(encoding="utf-8"))
-    topics = {"flight": facts(index, scene), **{name: mission_facts(mission) for name, mission in missions.items()}}
+    return {"flight": facts(index, scene), **{name: mission_facts(mission) for name, mission in missions.items()}}
+
+
+def main(out):
+    missions = json.loads(MISSIONS.read_text(encoding="utf-8"))
     template = (ROOT / "worker/ask.template.js").read_text(encoding="utf-8")
-    code = (template.replace("__ORIGIN__", ORIGIN).replace("__FACTS__", json.dumps(topics))
+    code = (template.replace("__ORIGIN__", ORIGIN).replace("__FACTS__", json.dumps(topics()))
             .replace("__ALERTS__", json.dumps({name: alerts(mission) for name, mission in missions.items()})))
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)

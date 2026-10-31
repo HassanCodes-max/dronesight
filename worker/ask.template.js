@@ -29,6 +29,25 @@ Use only the FACTS below. Rules:
 FACTS:
 `;
 
+const FACTS_URL = `${ALLOWED_ORIGIN}/facts.json`;
+const FACTS_SECONDS = 300;
+const FACTS_TIMEOUT_MS = 3000;
+let published = null;
+let checked = 0;
+
+// The site publishes the current facts, so new mission data needs no change here. The ones built
+// into this file are the fallback if the site cannot be reached.
+async function currentFacts(topic) {
+  if (Date.now() - checked > FACTS_SECONDS * 1000) {
+    const response = await fetch(FACTS_URL, { signal: AbortSignal.timeout(FACTS_TIMEOUT_MS) }).catch(() => null);
+    if (response?.ok) {
+      published = await response.json().catch(() => published);
+      checked = Date.now();
+    }
+  }
+  return published?.[topic] ?? FACTS[topic];
+}
+
 const recent = new Map();  // per-isolate, so a light limit; the free AI allowance is the hard cap
 
 function allowed(key, limit) {
@@ -56,7 +75,7 @@ function reply(status, body, origin) {
 }
 
 async function answer(env, question, topic) {
-  const messages = [{ role: "system", content: RULES + FACTS[topic] }, { role: "user", content: question }];
+  const messages = [{ role: "system", content: RULES + await currentFacts(topic) }, { role: "user", content: question }];
   for (const model of MODELS) {
     try {
       const result = await env.AI.run(model, { messages, max_tokens: MAX_ANSWER_TOKENS, temperature: 0.2 });

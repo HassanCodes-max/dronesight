@@ -26,7 +26,11 @@ SECRETS = {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_CHAT_ID": "12345"}
 HARNESS = """(async () => {
   const worker = (await import('data:text/javascript;base64,CODE')).default;
   const sent = [];
-  globalThis.fetch = async (url, options) => { sent.push({ url, body: JSON.parse(options.body) }); return { ok: true }; };
+  globalThis.fetch = async (url, options) => {
+    if (url.endsWith('/facts.json')) return { ok: Boolean(globalThis.siteFacts), json: async () => globalThis.siteFacts };
+    sent.push({ url, body: JSON.parse(options.body) });
+    return { ok: true };
+  };
   const seen = [];
   const ai = { run: async (model, input) => { seen.push(input.messages[0].content); return { response: globalThis.modelSays }; } };
   const call = async (body, { path = '/', origin = 'ORIGIN', ip = '1.1.1.1', env = {}, method = 'POST' } = {}) => {
@@ -68,6 +72,12 @@ HARNESS = """(async () => {
   const alertStatuses = [];
   for (let i = 0; i < 4; i += 1) alertStatuses.push((await call({ mission: 'flood', person }, { path: '/alert', ip: '5.0.0.5', env: SECRETS })).status);
   out.alertLimit = alertStatuses;
+
+  globalThis.siteFacts = { flood: 'Newly published flood facts.' };
+  await call({ question: 'x', mission: 'flood' }, { ip: '6.0.0.1' });
+  out.newFacts = seen.at(-1);
+  await call({ question: 'x', mission: 'fire' }, { ip: '6.0.0.2' });
+  out.missingTopicFacts = seen.at(-1);
   return JSON.stringify(out);
 })()"""
 
@@ -112,6 +122,8 @@ async def run(path):
             "visitor text is ignored": "send money" not in json.dumps(out["telegram"]),
             "token stays out of replies": "fake-token" not in json.dumps({k: v for k, v in out.items() if k != "telegram"}),
             "alerts are rate limited": out["alertLimit"] == [200, 200, 200, 429],
+            "facts published by the site are used": "Newly published flood facts." in out["newFacts"],
+            "a topic the site lacks falls back": "fire mission" in out["missingTopicFacts"],
         }
         return report(page, checks)
 

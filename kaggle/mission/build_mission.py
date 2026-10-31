@@ -28,7 +28,7 @@ SCENES = OUT / "scenes"
 SEED = 0
 TEST_FRACTION = VAL_FRACTION = 0.15
 SCENES_PER_MISSION = 9
-CANDIDATES = 120
+LARGEST = 30  # scenes are shown large and many source photos are tiny, so only the biggest are considered
 MIN_PEOPLE, MAX_PEOPLE = 5, 30
 HAZARD_SHARE = {"flood": 0.4, "fire": 0.1}  # partly affected scenes give the ranking real differences to show
 PERSON_CONF, HAZARD_CONF = 0.25, 0.25
@@ -36,8 +36,8 @@ PERSON_IMGSZ, FIRE_IMGSZ = 960, 640
 WATER_SIDE = 768  # the long side the water model trained at
 WATER_THRESHOLD = 0.5
 MEAN, STD = np.array([0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225])
-IMAGE_WIDTH = 960
-JPEG_QUALITY = 72
+IMAGE_WIDTH = 1280
+JPEG_QUALITY = 88
 OUTLINE_TOLERANCE = 0.002  # polygon simplification, as a share of the image
 MIN_REGION = 0.0005  # share of the image; smaller regions are noise
 BOX_PAD = 0.15  # share of a fire box added on each side, so flames at its edge are not cut straight
@@ -165,7 +165,7 @@ for mission, group in [("flood", "flood_image"), ("fire", "fire_image")]:
         photos.setdefault(path.stem.rsplit("_", 1)[0], path)
     print(mission, len(photos), "photos", flush=True)
     scored = []
-    for path in list(photos.values())[:CANDIDATES]:
+    for path in sorted(photos.values(), key=lambda p: -np.prod(cv2.imread(str(p)).shape[:2]))[:LARGEST]:
         image = cv2.imread(str(path))
         # Only the mission's own hazard, so a false fire box cannot raise an alarm in a flood.
         scene = {"source": path.stem, "people": people_in(person_model, image), "true_people": label_count(path),
@@ -181,8 +181,9 @@ for mission, group in [("flood", "flood_image"), ("fire", "fire_image")]:
         scene["image"] = f"scenes/{scene['source']}.jpg"
         cv2.imwrite(str(OUT / scene["image"]), small, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
         scene["aspect"] = image.shape[1] / image.shape[0]
+        scene["size"] = image.shape[:2]
         chosen.append(scene)
     missions[mission] = chosen
-    print(mission, [(s["source"], len(s["people"]), s["true_people"], len(s["flood"]), len(s["fire"]), len(s["smoke"])) for s in chosen], flush=True)
+    print(mission, [(s["source"], s["size"], len(s["people"]), s["true_people"], len(s["flood"]), len(s["fire"]), len(s["smoke"])) for s in chosen], flush=True)
 
 (OUT / "mission_scenes.json").write_text(json.dumps(missions))

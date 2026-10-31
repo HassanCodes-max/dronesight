@@ -21,7 +21,7 @@
   <main>
     <section class="intro">
       <h1>Find people in drone footage without watching all of it.</h1>
-      <p>Ask a question and jump straight to the moment. Try it on the sample flight below.</p>
+      <p>Ask a question and jump straight to the moment. Try it on the sample flight below, or add your own video.</p>
     </section>
 
     <div class="work">
@@ -68,11 +68,10 @@
             <label id="drop" class="drop">
               <input id="file" type="file" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv">
               <strong>Add your own flight</strong>
-              <span>MP4 or MOV, up to 3 minutes. Private to you and deleted after 24 hours.</span>
+              <span id="upload-hint">MP4 or MOV, up to 3 minutes. Private to you and deleted after 24 hours.</span>
             </label>
             <p id="upload-status" class="status" role="status"></p>
           </div>
-          <p id="static-note" class="status" hidden>This free edition shows one sample flight, with its detections already computed.</p>
         </section>
       </aside>
     </div>

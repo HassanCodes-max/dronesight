@@ -1,4 +1,5 @@
 // All text from the server or the user goes through textContent, never innerHTML.
+import { analyse } from "./local.js";
 import { findMoments, parse } from "./search.js";
 
 const $ = (id) => document.getElementById(id);
@@ -20,6 +21,7 @@ const PLAYHEAD_COLOUR = "#f2f5f8";
 
 const player = $("player");
 let videos = [];
+let localVideo = null;  // a visitor's own video in the static edition
 let selected = null;
 let index = null;
 let matches = new Set();
@@ -91,7 +93,7 @@ function renderVideos() {
 }
 
 async function refreshVideos() {
-  videos = STATIC_EDITION ? [SAMPLE_FLIGHT] : await api("api/videos");
+  videos = STATIC_EDITION ? [SAMPLE_FLIGHT, ...(localVideo ? [localVideo] : [])] : await api("api/videos");
   clearTimeout(pollTimer);
   if (videos.some((v) => v.status === "queued" || v.status === "processing")) {
     pollTimer = setTimeout(refreshVideos, POLL_MS);
@@ -187,7 +189,7 @@ function ask(question) {
   }
   const query = parse(question, index.duration);
   if (!query) {
-    if (ASK_URL) askAssistant(question);
+    if (ASK_URL && !selected?.local) askAssistant(question);
     else setResults("Your search", "I can only search for people, by how many and when. Try “at least 20 people” or “groups after 30 seconds”.", [], []);
     return;
   }
@@ -223,7 +225,7 @@ function sampleAt(time) {
     else high = middle - 1;
   }
   const sample = index.samples[low];
-  return sample.t <= time + 0.01 && time - sample.t <= SAMPLE_REACH_SECONDS ? sample : null;
+  return sample.t <= time + 0.01 && time - sample.t <= (index.reach ?? SAMPLE_REACH_SECONDS) ? sample : null;
 }
 
 function fitCanvas(canvas) {
@@ -308,10 +310,10 @@ async function selectVideo(video) {
   }
   try {
     const base = `api/videos/${encodeURIComponent(video.id)}`;
-    const loaded = await (STATIC_EDITION ? fetch("index.json").then((r) => r.json()) : api(`${base}/index`));
+    const loaded = video.local?.index ?? await (STATIC_EDITION ? fetch("index.json").then((r) => r.json()) : api(`${base}/index`));
     if (selected !== video) return;
     index = loaded;
-    player.src = STATIC_EDITION ? "flight.mp4" : `${base}/stream`;
+    player.src = video.local?.url ?? (STATIC_EDITION ? "flight.mp4" : `${base}/stream`);
     $("seek").max = index.duration;
     showBusiest();
     draw();
@@ -320,7 +322,36 @@ async function selectVideo(video) {
   }
 }
 
+// The static edition has no server to send a file to, so the visitor's own device does the work.
+async function analyseHere(file) {
+  if (localVideo?.status === "processing") return;
+  if (localVideo?.local) URL.revokeObjectURL(localVideo.local.url);
+  const status = $("upload-status");
+  localVideo = { id: "local", title: file.name, status: "processing", progress: 0, is_demo: 1 };
+  await selectVideo(localVideo);
+  await refreshVideos();
+  try {
+    const local = await analyse(file, (progress, message) => {
+      localVideo.progress = progress;
+      status.textContent = message;
+      renderVideos();
+    });
+    Object.assign(localVideo, { status: "ready", duration: local.index.duration, local });
+    status.textContent = "Done. Your video stayed on this device, and it goes when you close the page.";
+    await selectVideo(localVideo);
+  } catch (error) {
+    Object.assign(localVideo, { status: "failed", message: error.message });
+    status.textContent = error.message;
+    await selectVideo(SAMPLE_FLIGHT);
+  }
+  await refreshVideos();
+}
+
 async function upload(file) {
+  if (STATIC_EDITION) {
+    await analyseHere(file);
+    return;
+  }
   if (!signedIn) {
     openAuth("Sign in to add your own flight. It stays private and is deleted after 24 hours.");
     return;
@@ -444,7 +475,7 @@ window.addEventListener("resize", draw);
 document.addEventListener("fullscreenchange", draw);
 
 $("file").addEventListener("click", (event) => {
-  if (!signedIn) {
+  if (!STATIC_EDITION && !signedIn) {
     event.preventDefault();
     openAuth("Sign in to add your own flight. It stays private and is deleted after 24 hours.");
   }
@@ -466,8 +497,7 @@ drop.addEventListener("drop", (event) => {
 (async () => {
   if (STATIC_EDITION) {
     $("account").hidden = true;
-    $("upload-area").hidden = true;
-    $("static-note").hidden = false;
+    $("upload-hint").textContent = "MP4 or MOV, up to 3 minutes. It stays on your device and nothing is uploaded. It finds people only, about once a second, and takes a few minutes.";
   } else {
     const me = await api("api/me");
     setUser(me.email);
