@@ -149,7 +149,7 @@ def label_count(path):
 
 person_model = YOLO(str(mounted("dronesight-experiment-2") / "runs/train_vhc/weights/best.pt"))
 flood_model = smp.Unet("resnet34", encoder_weights=None, classes=1)
-flood_model.load_state_dict(torch.load(mounted("dronesight-water") / "water_unet.pt", map_location="cpu"))
+flood_model.load_state_dict(torch.load(mounted("dronesight-water-mixed") / "water_unet.pt", map_location="cpu"))
 flood_model.eval()
 fire_model = YOLO(str(mounted("dronesight-experiment-4") / "runs/fire/weights/best.pt"))
 unseen = unseen_scenes()

@@ -1,8 +1,10 @@
 """Mistakes here would send a team to the wrong person or the wrong place, so cases are checked by hand."""
 import math
 
+import numpy as np
 import pytest
 
+from deploy.build_mission_data import hazard_at
 from dronesight.app.rescue import Person, Telemetry, locate, location_error_m, rank
 
 CENTRE = Telemetry(latitude=33.7, longitude=73.0, altitude_m=100, heading_degrees=0, camera_fov_degrees=90, aspect=1)
@@ -124,3 +126,17 @@ def test_uncertain_detection_says_so_and_ties_prefer_the_surer_one():
     ranked = rank([weak, strong])
     assert [p.id for p in ranked] == [2, 1]
     assert "detection uncertain, check the image" in weak.reasons
+
+
+def test_dry_land_beside_water_is_a_watch_but_beside_flames_is_high():
+    water = rank([person(1, distance_m=4, nearest_hazard="flood water", neighbours=3)])[0]
+    flames = rank([person(2, distance_m=4, nearest_hazard="fire", neighbours=3)])[0]
+    assert water.level == "WATCH" and flames.level == "HIGH"
+
+
+def test_distance_is_measured_from_flames_not_from_smoke_boxes():
+    fire, smoke = np.zeros((100, 100), np.uint8), np.zeros((100, 100), np.uint8)
+    fire[:, 80:] = 1
+    smoke[:, 40:] = 1
+    inside, _, nearest, distance = hazard_at({"fire": fire, "smoke": smoke}, 0.1, 0.5, 1)
+    assert inside is None and nearest == "fire" and distance == pytest.approx(70, abs=1)

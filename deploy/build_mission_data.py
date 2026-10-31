@@ -44,7 +44,7 @@ def rasterise(scene, height):
 
 
 def hazard_at(masks, x, y, metres_per_cell):
-    """What the point stands in and how deep, plus the nearest hazard it is not in and how far, in metres."""
+    """What the point stands in and how deep, plus the nearest water or flames it is not in and how far, in metres."""
     height, width = next(iter(masks.values())).shape
     column, row = min(width - 1, int(x * width)), min(height - 1, int(y * height))
     inside, depth, nearest, distance = None, 0, None, None
@@ -52,7 +52,7 @@ def hazard_at(masks, x, y, metres_per_cell):
         if mask[row, column]:
             if inside is None:
                 inside, depth = name, float(cv2.distanceTransform(mask, cv2.DIST_L2, 5)[row, column] * metres_per_cell)
-        elif mask.any():
+        elif name != "smoke" and mask.any():
             cells = cv2.distanceTransform(1 - mask, cv2.DIST_L2, 5)[row, column]
             if distance is None or cells * metres_per_cell < distance:
                 nearest, distance = name, float(cells * metres_per_cell)

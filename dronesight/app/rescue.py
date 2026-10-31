@@ -13,8 +13,10 @@ TILT_ERROR_DEGREES = 2.0  # how far a gimbal may be from pointing straight down
 
 HAZARD_POINTS = {"fire": 65, "flood water": 45, "smoke": 10}  # smoke boxes are coarse, so smoke alone is only a watch
 DEEP_POINTS = 20  # someone far from safe ground cannot simply walk out
-DEEP_METRES = 5
-NEAR_POINTS = ((5, 40), (20, 25), (50, 10))  # metres from the hazard, points, always below being in it
+DEEP_METRES = 3
+# Metres from the hazard and points. Fire spreads and burns at a distance. Dry land beside water is
+# safer, so it stays a watch unless other reasons add up. Smoke boxes are too coarse to measure from.
+NEAR_POINTS = {"fire": ((5, 40), (20, 25), (50, 10)), "flood water": ((5, 25), (20, 10))}
 ALONE_POINTS = 15
 STILL_POINTS = 15
 ALONE_RADIUS_M = 10
@@ -86,7 +88,7 @@ def assess(person):
             score += DEEP_POINTS
             reasons.append(f"about {round(person.depth_m)} m from safe ground")
     if person.hazard in (None, "smoke") and person.distance_m is not None:
-        for metres, points in NEAR_POINTS:
+        for metres, points in NEAR_POINTS[person.nearest_hazard]:
             if person.distance_m <= metres:
                 score += points
                 reasons.append(f"about {round(person.distance_m)} m from {person.nearest_hazard}")

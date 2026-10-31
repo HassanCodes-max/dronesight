@@ -1,14 +1,32 @@
 # DroneSight
 
-Ask your drone footage questions in plain English.
+A simulated rescue drone that finds people in a flood or fire, works out who is in most danger, and sends their location to headquarters before moving on.
 
-Drone teams return with hours of video and scrub through it by hand to find what matters, for example in flood response, search and rescue, or site inspection. DroneSight finds the people in a flight, indexes every detection by time, and takes you straight to the moment you asked about.
+After a disaster, a drone can cover ground faster than any search team, but someone still has to watch the video and decide who needs help first. DroneSight shows how that step could work: the drone flies its search pattern, its camera view is analysed, the most critical people are reported with a latitude and longitude, and it moves to the next sector.
 
 **Live demo:** https://hassanali0987654-dronesight.static.hf.space
 
-**Status:** the live demo is a free static edition with one sample flight and no server. The full version, with accounts and uploads, runs from `run_public.bat` and has no permanent host yet. Search currently understands questions about people, by count and time. Map pins, LLM questions and before and after comparison are planned, not built.
+**This is a research simulation, not a rescue system.** The flight, location and ground scale are simulated, and the risk rules have not been validated by emergency responders. In a real emergency, call your local emergency services.
+
+**Status:** the flood and fire missions are live on a free static site with no server. A second page explores a recorded flight, with a free question box backed by a Cloudflare Worker. A question box on the missions and alerts to a real Telegram headquarters are written and tested against a fake Telegram, but not live. The full version with accounts and uploads runs locally and has no permanent host.
 
 ## How it works
+
+The mission runs in the visitor's browser. Models cannot run in real time on a free static host, so they run once on Kaggle and the site replays their real output.
+
+```
+Disaster photos (C2A: real aerial scenes with people added)
+   |
+Kaggle CPU job: YOLO11s finds people, a U-Net traces water, YOLO11s and colour trace flames
+   |
+Mission data: each person's hazard, depth into it, distance to safety and location
+   |
+Browser: flight simulator with a task queue, risk ranking, alerts to headquarters
+```
+
+**Risk ranking** uses fixed rules in `dronesight/app/rescue.py`, so every decision can be explained. Being in fire or water counts most, then how far the person is from safety, then being near a hazard, then being alone. Someone 3 m or more into water is critical, because they cannot just step out. Dry land beside water is a watch, while dry land beside flames is high, because fire spreads and burns at a distance. Smoke alone is only a watch, because its boxes are coarse. The rules are written by hand, not learned from responders' decisions.
+
+The recorded flight page has its own pipeline:
 
 ```
 Browser (plain JS, no third-party scripts)
@@ -20,9 +38,11 @@ SQLite: users, videos, every detection with its time and track
 Worker process: decodes video, runs YOLO11s at 1280 through ONNX Runtime on CPU, tracks people
 ```
 
-The model runs through ONNX, so the web server needs no PyTorch or GPU. At the 1280 input it takes about 580 ms per frame on a Kaggle CPU and about 650 ms on the development laptop, so a 3-minute flight sampled every 0.25 s indexes in about 8 minutes.
+The model runs through ONNX, so the web server needs no PyTorch or GPU. At the 1280 input it takes about 565 ms per frame on a Kaggle CPU and about 650 ms on the development laptop, so a 3-minute flight sampled every 0.25 s indexes in about 8 minutes.
 
-Search is deterministic and runs in the browser: a question becomes a filter on the flight's detections, which also drive the live boxes and the activity timeline. It costs nothing per query, and text can never become instructions, so there is no prompt injection risk until an LLM is added.
+Search is deterministic and runs in the browser: a question becomes a filter on the flight's detections, which also drive the live boxes and the activity timeline. It costs nothing per query, and text can never become instructions.
+
+Free questions go to a Cloudflare Worker that calls Workers AI. The facts live in the worker, so a visitor cannot supply false ones. The model has no tools, its replies are filtered for leaked instructions and shown as plain text, and requests are rate limited by IP and origin.
 
 ## Security
 
@@ -45,6 +65,8 @@ No website is attack-proof. These are layered defences, and `tests/test_app.py` 
 - **Accounts:** no email verification or password reset yet.
 - **Rate limits:** counters are per process and reset on restart.
 - **Independent testing:** no external scan or penetration test has been run.
+
+`tests/worker_check.py` runs the built worker in a real browser against refused origins, oversized questions, odd mission names, leaked instructions and rate limits. Visitors can only choose which critical person to alert about, and the worker writes every message itself, so a visitor's text never reaches Telegram. Each alert says it is a simulation, and nothing contacts real emergency services.
 
 ## Run locally
 
@@ -89,7 +111,10 @@ Training runs on Kaggle GPUs. Models are chosen on validation data, never on tes
 |---|---|---|---|
 | 1 | VisDrone | Which of YOLO11n at 640, YOLO11n at 960 or YOLO11s at 960 is best? | Done: YOLO11s at 960 |
 | 2 | VisDrone, HERIDAL, C2A | Does mixing datasets help find people in footage from a dataset the model never saw? | Done: no measurable gain |
-| 3 | VisDrone, HERIDAL | What finds tiny people best within the site's CPU budget? | Inference tests done, training running |
+| 3 | VisDrone, HERIDAL | What finds tiny people best within the site's CPU budget? | Done: VisDrone + HERIDAL at 1280 |
+| 4 | FloodNet, D-Fire | Can models see the hazard as well as the people? | Done: fire boxes kept, flood outlines too rough |
+| 5 | FloodNet | Does a pixel model trace water better than instance masks? | Done: U-Net, but it misses brown water |
+| 6 | FloodNet, Flood Area | Does training on real floods fix brown water? | Done: test IoU 0.50 to 0.85 on real floods |
 
 ### Experiment 1 results (10 classes, 30 epochs)
 
@@ -149,10 +174,53 @@ Found and correct are recall and precision at confidence 0.25.
 - **Tiling:** 2 x 2 tiles plus the whole frame scored 0.245 for five model passes per frame with linear shrinking, against 0.244 for one pass at 1280, so it was dropped.
 - **C2A:** with 2 x 2 tiles, only 16% of the all-three model's HERIDAL boxes were correct, against 51% without C2A, so the training run drops it.
 
-The shipped model won on the mean, but 0.250 against 0.246 is close to a tie and it finds far fewer people in HERIDAL. Part 2 repeats HERIDAL three times in training to address that.
+That model won on the mean, but 0.250 against 0.246 is close to a tie and it finds far fewer people in HERIDAL. Part 2 repeats HERIDAL three times in training to address that.
+
+### Experiment 3 training (15 epochs, HERIDAL repeated three times, validation data)
+
+| Model | Input | Mean mAP50-95 | VisDrone found / correct | HERIDAL found / correct |
+|---|---|---|---|---|
+| YOLO11s with a stride-4 layer | 960 | 0.226 | 60% / 78% | 36% / 56% |
+| **YOLO11s (shipped)** | 1280 | **0.274** | **66% / 77%** | **43% / 68%** |
+
+The stride-4 layer added detail for small objects but lost on both datasets, so it was dropped.
+
+### Final people model on test data, scored once
+
+Through the site's shrinking and NMS, on images that played no part in any choice. This is the number to quote.
+
+| Test set | Images | People | mAP50-95 | mAP50 | Found | Correct |
+|---|---|---|---|---|---|---|
+| VisDrone test-dev | 1,610 | 27,382 | 0.197 | 0.478 | 44% | 69% |
+| HERIDAL, four places held out | 404 | 1,743 | 0.391 | 0.714 | 67% | 72% |
+
+Found and correct are at confidence 0.25, with a box counted correct at IoU 0.5. The same model found 66% in VisDrone validation and 43% in HERIDAL validation, so a single location or split can move this figure a lot. It misses between a third and just over half of people, which is why the site says so and why a real system would need a person watching the feed.
+
+### Experiment 4: seeing the hazard (each model scored once on its own test split)
+
+| Hazard | Model | Dataset | Test score |
+|---|---|---|---|
+| Flood | YOLO11s-seg | FloodNet, 398 labelled images, split by blocks of neighbouring frames | Pixel IoU 0.543, mask mAP50 0.170 |
+| Fire and smoke | YOLO11s | D-Fire | mAP50-95 0.415, mAP50 0.739: smoke 0.476, fire 0.354 |
+
+D-Fire is largely not aerial, so its score says little about a drone's view. Fire boxes were checked by eye on C2A's aerial scenes: they land on real flames but miss some, for example in forest scenes. Boxes also marked bystanders as in the fire, so the mission cuts each box down to flame-coloured pixels.
+
+### Experiments 5 and 6: tracing water by pixel
+
+Test pixel IoU, higher is better, with both models scored on the same images. Both use a U-Net with a ResNet-34 encoder.
+
+| Model | Trained on | FloodNet | Flood Area |
+|---|---|---|---|
+| Experiment 5 | FloodNet, wide colour shifting | 0.571 | 0.500 |
+| **Experiment 6 (shipped)** | FloodNet + Flood Area, narrow colour shifting | **0.574** | **0.848** |
+
+Experiment 5 traced grey and blue water but missed brown floodwater and shaded grey roofs, because FloodNet is shot straight down and its water is rarely muddy. Colour shifting could not close that gap. Experiment 6 adds Flood Area Segmentation, 290 photos of real floods, and picks the best epoch on the mean validation IoU of both datasets. Flood Area is split at random, so photos of one flood can land on both sides, and 0.848 may be a little high. Its Kaggle listing says CC0, but it also says its images were collected from the internet, so its weights are used here and its images are not republished.
 
 ## Update log
 
+- Missions moved to the Experiment 6 water model, and the people model was scored once on test data. The site now quotes the test figures, which are lower for VisDrone and higher for HERIDAL than the validation ones.
+- With accurate water, 168 of 215 flood people ranked high, because dry land beside water scored almost the same as standing in it. Fire and flood now score distance differently, and nothing scores points for being near a smoke box.
+- Rebuilt around emergencies: a simulated drone flies flood and fire missions, ranks people by risk, reports critical locations to headquarters and moves on. Hazards were traced first with boxes, then outlines, then pixels.
 - Page rebuilt around the video: boxes stay on during playback, a timeline shows people across the flight, ranked moments appear before any search, and uploads can be deleted. Search moved to the browser, and a free static edition went live.
 - Experiment 3 inference tests: the site now shrinks frames with area averaging and runs the VisDrone + HERIDAL model at 1280. Deployment moved from Hugging Face to an Ubuntu server with Caddy.
 - Experiment 2 finished: mixing datasets gave no measurable gain on unseen footage. The site moved to the model trained on all three, chosen on validation data.

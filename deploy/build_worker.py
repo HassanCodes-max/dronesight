@@ -24,7 +24,7 @@ GROUPS = {"cars and vans": ("car", "van"), "trucks and buses": ("truck", "bus"),
           "bicycles": ("bicycle",), "tricycles": ("tricycle", "awning-tricycle")}
 ABOUT = """DroneSight finds people in recorded drone video and lets you jump to the moment.
 People are found by a YOLO11s model trained on the VisDrone and HERIDAL datasets, four times a second.
-On validation data it found about 66% of people in VisDrone city footage and 43% in HERIDAL search-and-rescue footage.
+On its test images it found about 44% of people in VisDrone city footage and 67% in HERIDAL search-and-rescue footage.
 This sample is 42 seconds from the VisDrone dataset. It has no GPS, so locations on a map are unknown."""
 
 
