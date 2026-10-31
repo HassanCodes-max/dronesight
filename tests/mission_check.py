@@ -26,6 +26,28 @@ HAS_PIXELS = """(() => { const c = document.getElementById('CANVAS');
     for (let i = 0; i < d.length; i += 4) if (d[i] > 40) return true; return false; })()"""
 
 
+async def watch(page, name, out, checks):
+    """Let one mission run to the end and check what headquarters received."""
+    checks[f"{name}: first alert arrives"] = await page.wait("document.querySelectorAll('.alert').length > 0", 40)
+    await page.shot(Path(out) / f"{name}_running.png")
+    checks[f"{name}: mission finishes"] = await page.wait("/Mission complete/.test(document.getElementById('status').textContent)", 150)
+    await asyncio.sleep(0.5)
+    print("status:", await page.js("document.getElementById('status').textContent"))
+    alerts = await page.js(READ_ALERTS)
+    tally = await page.js(TALLY)
+    print("tally:", tally)
+    print("first alerts:", json.dumps(alerts[:4]))
+    levels = [a["level"] for a in alerts]
+    print("order:", levels)
+    checks[f"{name}: every alert has coordinates"] = bool(alerts) and all("," in a["coords"] for a in alerts)
+    checks[f"{name}: every alert has a reason"] = bool(alerts) and all(a["why"] for a in alerts)
+    checks[f"{name}: critical people reported"] = tally["critical"] == 0 or levels.count("CRITICAL") == tally["critical"]
+    checks[f"{name}: nobody left waiting"] = tally["waiting"] == 0
+    checks[f"{name}: everyone found"] = tally["found"] == await page.js(
+        f"fetch('mission/mission.json').then(r => r.json()).then(m => m.{name}.sectors.reduce((n, s) => n + s.people.length, 0))")
+    await page.shot(Path(out) / f"{name}_done.png")
+
+
 async def run(url, out):
     targets = httpx.get(f"http://127.0.0.1:{PORT}/json").json()
     target = next(t for t in targets if t["type"] == "page")
@@ -41,24 +63,10 @@ async def run(url, out):
         checks["camera shows the scene"] = await page.js(HAS_PIXELS.replace("CANVAS", "camera"))
         checks["map shows the area"] = await page.js(HAS_PIXELS.replace("CANVAS", "map"))
         await page.js("document.getElementById('speed').click(); document.getElementById('speed').click()")
-        checks["first alert arrives"] = await page.wait("document.querySelectorAll('.alert').length > 0", 40)
-        await page.shot(Path(out) / "mission_running.png")
-        checks["mission finishes"] = await page.wait("/Mission complete/.test(document.getElementById('status').textContent)", 150)
-        await asyncio.sleep(0.5)
-        print("status:", await page.js("document.getElementById('status').textContent"))
-        alerts = await page.js(READ_ALERTS)
-        tally = await page.js(TALLY)
-        print("tally:", tally)
-        print("first alerts:", json.dumps(alerts[:4]))
-        levels = [a["level"] for a in alerts]
-        print("order:", levels)
-        checks["every alert has coordinates"] = bool(alerts) and all("," in a["coords"] for a in alerts)
-        checks["every alert has a reason"] = bool(alerts) and all(a["why"] for a in alerts)
-        checks["critical people reported"] = tally["critical"] == 0 or levels.count("CRITICAL") == tally["critical"]
-        checks["nobody left waiting"] = tally["waiting"] == 0
-        checks["everyone found"] = tally["found"] == await page.js(
-            "fetch('mission/mission.json').then(r => r.json()).then(m => m.flood.sectors.reduce((n, s) => n + s.people.length, 0))")
-        await page.shot(Path(out) / "mission_done.png")
+        await watch(page, "flood", out, checks)
+        if await page.js("!document.getElementById('choose-fire').hidden"):
+            await page.js("document.getElementById('choose-fire').click()")
+            await watch(page, "fire", out, checks)
         await page.call("Emulation.setDeviceMetricsOverride", width=390, height=844, deviceScaleFactor=2, mobile=True)
         await asyncio.sleep(1)
         checks["mobile has no sideways scroll"] = await page.js("document.documentElement.scrollWidth <= window.innerWidth")

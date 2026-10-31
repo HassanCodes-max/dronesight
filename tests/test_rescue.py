@@ -90,6 +90,24 @@ def test_equal_scores_go_to_whoever_is_furthest_from_safety():
     assert [p.id for p in rank([near, far])] == [2, 1]
 
 
+def test_smoke_alone_is_only_a_watch_however_far_inside():
+    smoke = rank([person(1, hazard="smoke", depth_m=30, neighbours=3)])[0]
+    assert smoke.level == "WATCH" and smoke.reasons == ["in smoke"]
+
+
+def test_smoke_beside_flames_counts_both():
+    beside = person(1, hazard="smoke", distance_m=4, nearest_hazard="fire", neighbours=3)
+    away = person(2, hazard="smoke", distance_m=45, nearest_hazard="fire", neighbours=3)
+    assert [p.id for p in rank([away, beside])] == [1, 2]
+    assert beside.level == "HIGH" and beside.reasons == ["in smoke", "about 4 m from fire"]
+
+
+def test_person_in_flames_outranks_person_in_smoke_beside_them():
+    flames = person(1, hazard="fire", neighbours=3)
+    beside = person(2, hazard="smoke", distance_m=1, nearest_hazard="fire", neighbours=3)
+    assert [p.id for p in rank([beside, flames])] == [1, 2]
+
+
 def test_person_far_from_danger_is_clear_even_if_alone():
     safe = rank([person(1, distance_m=200, nearest_hazard="fire", neighbours=0, still=True)])[0]
     assert safe.level == "CLEAR" and safe.score == 0 and safe.reasons == []

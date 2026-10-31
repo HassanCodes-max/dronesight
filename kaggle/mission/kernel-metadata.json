@@ -5,9 +5,9 @@
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": true,
+  "enable_gpu": false,
   "enable_internet": true,
   "dataset_sources": ["rgbnihal/c2a-dataset"],
   "competition_sources": [],
-  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-2", "hassanagddsbdxfg/dronesight-flood"]
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-2", "hassanagddsbdxfg/dronesight-flood", "hassanagddsbdxfg/dronesight-experiment-4"]
 }

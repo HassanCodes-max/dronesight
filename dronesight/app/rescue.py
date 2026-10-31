@@ -11,7 +11,7 @@ METRES_PER_DEGREE = 111_320
 GPS_ERROR_M = 5.0  # typical consumer drone GPS
 TILT_ERROR_DEGREES = 2.0  # how far a gimbal may be from pointing straight down
 
-HAZARD_POINTS = {"fire": 65, "flood water": 45, "smoke": 30}
+HAZARD_POINTS = {"fire": 65, "flood water": 45, "smoke": 10}  # smoke boxes are coarse, so smoke alone is only a watch
 DEEP_POINTS = 20  # someone far from safe ground cannot simply walk out
 DEEP_METRES = 5
 NEAR_POINTS = ((5, 40), (20, 25), (50, 10))  # metres from the hazard, points, always below being in it
@@ -82,10 +82,10 @@ def assess(person):
     if person.hazard:
         score += HAZARD_POINTS[person.hazard]
         reasons.append(f"in {person.hazard}")
-        if person.depth_m >= DEEP_METRES:
+        if person.hazard != "smoke" and person.depth_m >= DEEP_METRES:
             score += DEEP_POINTS
             reasons.append(f"about {round(person.depth_m)} m from safe ground")
-    elif person.distance_m is not None:
+    if person.hazard in (None, "smoke") and person.distance_m is not None:
         for metres, points in NEAR_POINTS:
             if person.distance_m <= metres:
                 score += points

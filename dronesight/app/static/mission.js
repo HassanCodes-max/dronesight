@@ -14,7 +14,7 @@ const REPORTED_LEVELS = new Set(["CRITICAL", "HIGH"]);
 const COLOURS = { CRITICAL: "#ff5a4f", HIGH: "#ff9f40", WATCH: "#ffd84d", CLEAR: "#b3bec9" };
 const FLOOD_FILL = "rgba(64, 156, 255, 0.32)";
 const FIRE_FILL = "rgba(255, 106, 40, 0.42)";
-const SMOKE_FILL = "rgba(190, 190, 190, 0.32)";
+const SMOKE_FILL = "rgba(190, 190, 190, 0.16)";
 const HOME = { row: 2.75, column: -0.75 };
 
 let missions = null;
@@ -202,16 +202,19 @@ function drawOverlays(ctx, sector, x, y, width, height, reveal) {
   ctx.beginPath();
   ctx.rect(x, y, width, height * reveal);
   ctx.clip();
-  ctx.fillStyle = FLOOD_FILL;
-  for (const outline of sector.flood) {
-    ctx.beginPath();
-    outline.forEach(([px, py], i) => (i ? ctx.lineTo(x + px * width, y + py * height) : ctx.moveTo(x + px * width, y + py * height)));
-    ctx.closePath();
-    ctx.fill();
-  }
-  for (const [boxes, fill] of [[sector.smoke, SMOKE_FILL], [sector.fire, FIRE_FILL]]) {
+  // One path for all the smoke boxes, so where they overlap does not look thicker.
+  ctx.fillStyle = SMOKE_FILL;
+  ctx.beginPath();
+  for (const [x1, y1, x2, y2] of sector.smoke) ctx.rect(x + x1 * width, y + y1 * height, (x2 - x1) * width, (y2 - y1) * height);
+  ctx.fill();
+  for (const [outlines, fill] of [[sector.flood, FLOOD_FILL], [sector.fire, FIRE_FILL]]) {
     ctx.fillStyle = fill;
-    for (const [x1, y1, x2, y2] of boxes) ctx.fillRect(x + x1 * width, y + y1 * height, (x2 - x1) * width, (y2 - y1) * height);
+    for (const outline of outlines) {
+      ctx.beginPath();
+      outline.forEach(([px, py], i) => (i ? ctx.lineTo(x + px * width, y + py * height) : ctx.moveTo(x + px * width, y + py * height)));
+      ctx.closePath();
+      ctx.fill();
+    }
   }
   ctx.restore();
   for (const person of sector.people) {

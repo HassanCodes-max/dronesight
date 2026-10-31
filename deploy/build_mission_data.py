@@ -29,35 +29,35 @@ AREAS = {"flood": {"title": "Flood", "latitude": 34.015, "longitude": 71.975},
 
 
 def rasterise(scene, height):
-    """One mask per hazard, in a small grid. Fire and smoke boxes become filled rectangles."""
+    """One mask per hazard, in a small grid, most serious first. Smoke boxes become filled rectangles."""
     masks = {}
-    flood = np.zeros((height, RASTER_WIDTH), np.uint8)
-    for outline in scene["flood"]:
-        points = (np.array(outline) * [RASTER_WIDTH, height]).astype(np.int32)
-        cv2.fillPoly(flood, [points], 1)
-    masks["flood water"] = flood
-    for name in ["fire", "smoke"]:
+    for name, key in [("flood water", "flood"), ("fire", "fire")]:
         mask = np.zeros((height, RASTER_WIDTH), np.uint8)
-        for x1, y1, x2, y2 in scene[name]:
-            cv2.rectangle(mask, (int(x1 * RASTER_WIDTH), int(y1 * height)), (int(x2 * RASTER_WIDTH), int(y2 * height)), 1, -1)
+        for outline in scene[key]:
+            points = (np.array(outline) * [RASTER_WIDTH, height]).astype(np.int32)
+            cv2.fillPoly(mask, [points], 1)
         masks[name] = mask
+    smoke = np.zeros((height, RASTER_WIDTH), np.uint8)
+    for x1, y1, x2, y2 in scene["smoke"]:
+        cv2.rectangle(smoke, (int(x1 * RASTER_WIDTH), int(y1 * height)), (int(x2 * RASTER_WIDTH), int(y2 * height)), 1, -1)
+    masks["smoke"] = smoke
     return masks
 
 
 def hazard_at(masks, x, y, metres_per_cell):
-    """What the point stands in and how deep, otherwise the nearest hazard and its distance in metres."""
+    """What the point stands in and how deep, plus the nearest hazard it is not in and how far, in metres."""
     height, width = next(iter(masks.values())).shape
     column, row = min(width - 1, int(x * width)), min(height - 1, int(y * height))
-    nearest, distance = None, None
+    inside, depth, nearest, distance = None, 0, None, None
     for name, mask in masks.items():
         if mask[row, column]:
-            depth = cv2.distanceTransform(mask, cv2.DIST_L2, 5)[row, column]
-            return name, float(depth * metres_per_cell), None, None
-        if mask.any():
+            if inside is None:
+                inside, depth = name, float(cv2.distanceTransform(mask, cv2.DIST_L2, 5)[row, column] * metres_per_cell)
+        elif mask.any():
             cells = cv2.distanceTransform(1 - mask, cv2.DIST_L2, 5)[row, column]
             if distance is None or cells * metres_per_cell < distance:
                 nearest, distance = name, float(cells * metres_per_cell)
-    return None, 0, nearest, distance
+    return inside, depth, nearest, distance
 
 
 def build_mission(name, scenes):
