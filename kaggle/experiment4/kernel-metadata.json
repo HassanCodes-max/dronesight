@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-experiment-4",
+  "title": "DroneSight Experiment 4",
+  "code_file": "train_hazards.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["aletbm/aerial-imagery-dataset-floodnet-challenge", "sayedgamal99/smoke-fire-detection-yolo"],
+  "competition_sources": [],
+  "kernel_sources": []
+}
