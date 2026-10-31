@@ -52,6 +52,7 @@ function newState() {
 function start() {
   mission = missions[name];
   state = newState();
+  state.sector = mission.sectors[0];  // the camera shows the area from take-off, not a black screen
   paused = false;
   $("pause").textContent = "Pause";
   $("alerts").replaceChildren();
