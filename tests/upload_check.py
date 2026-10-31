@@ -62,6 +62,19 @@ async def run(url, video, out, graphics):
         posts = [(r["method"], r["url"][:80]) for r in sent if r["method"] not in ("GET", "HEAD", "OPTIONS")]
         print("non-GET requests:", json.dumps(posts))
         checks["nothing was sent from the device"] = not posts
+        before = len(page.events)
+        await page.call("Page.navigate", url=f"{url}/footage.html")
+        await page.wait("document.querySelectorAll('.clip').length > 1", 30)
+        root = (await page.call("DOM.getDocument"))["root"]["nodeId"]
+        node = (await page.call("DOM.querySelector", nodeId=root, selector="#file"))["nodeId"]
+        started = time.perf_counter()
+        await page.call("DOM.setFileInputFiles", nodeId=node, files=[str(Path(video).resolve())])
+        await page.wait("/Finding people/.test(document.getElementById('upload-status').textContent)", 60)
+        print("second video ready after", round(time.perf_counter() - started), "s", flush=True)
+        again = [e["params"]["request"]["url"] for e in page.events[before:] if e.get("method") == "Network.requestWillBeSent"]
+        big = [u for u in again if ".onnx" in u or ".wasm" in u or "xet" in u]
+        print("large requests:", [u[:90] for u in big])
+        checks["a second video downloads nothing big"] = not [u for u in big if "flight.mp4" not in u and "xet-bridge" not in u or u.endswith((".onnx", ".wasm"))]
         return report(page, checks)
 
 

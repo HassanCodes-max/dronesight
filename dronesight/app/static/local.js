@@ -1,6 +1,7 @@
 // Finds people in a visitor's video on their own device, so the file never leaves it. The result has
 // the same shape as the server's index, so the page's boxes, timeline and search work unchanged.
 const MODEL = "person_960.onnx";
+const SAVED_FILES = "dronesight-model-1";  // change this when the model or runtime changes
 const SIZE = 960;
 const CONFIDENCE = 0.25;
 const MAX_OVERLAP = 0.5;
@@ -57,11 +58,27 @@ function toTensor(ort, ctx, video, frame) {
   return new ort.Tensor("float32", blob, [1, 3, SIZE, SIZE]);
 }
 
+// The host's download links change on every request, so the browser's own cache never matches them.
+// Keeping the files here means only the first video downloads them.
+async function saved(path) {
+  const files = await caches.open(SAVED_FILES);
+  const known = await files.match(path);
+  if (known) return known.arrayBuffer();
+  const response = await fetch(path);
+  if (!response.ok) throw new Error("The model could not be downloaded. Please try again.");
+  const data = await response.arrayBuffer();
+  // A fresh response, because the store refuses some of the host's headers. A full disk only means downloading again.
+  await files.put(path, new Response(data)).catch(() => {});
+  return data;
+}
+
 async function loadModel() {
   const adapter = await navigator.gpu?.requestAdapter().catch(() => null);
   const ort = await import(adapter ? "./ort/ort.webgpu.min.mjs" : "./ort/ort.wasm.min.mjs");
   ort.env.wasm.wasmPaths = new URL("ort/", document.baseURI).href;
-  const session = await ort.InferenceSession.create(MODEL, { executionProviders: adapter ? ["webgpu", "wasm"] : ["wasm"] });
+  const [binary, model] = await Promise.all([saved(`ort/ort-wasm-simd-threaded${adapter ? ".asyncify" : ""}.wasm`), saved(MODEL)]);
+  ort.env.wasm.wasmBinary = binary;
+  const session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: adapter ? ["webgpu", "wasm"] : ["wasm"] });
   return { ort, session, device: adapter ? "graphics card" : "processor" };
 }
 
