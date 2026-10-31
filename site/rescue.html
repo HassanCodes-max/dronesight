@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-edition="server">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -30,12 +30,6 @@
       </details>
     </section>
 
-    <section id="working" class="working" hidden>
-      <h1 id="working-title">Checking your video</h1>
-      <progress id="bar" max="1" value="0" aria-label="Progress"></progress>
-      <p id="working-note" role="status"></p>
-    </section>
-
     <section id="results" hidden>
       <div class="result-head">
         <div>
@@ -43,6 +37,11 @@
           <p id="subhead" class="lead"></p>
         </div>
         <button id="again" class="control" type="button">Check another video</button>
+      </div>
+
+      <div id="working" class="working" hidden>
+        <progress id="bar" max="1" value="0" aria-label="Progress"></progress>
+        <p id="working-note" role="status"></p>
       </div>
 
       <div id="report" class="report" hidden>

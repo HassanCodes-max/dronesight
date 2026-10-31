@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-STATIC = ROOT / "dronesight/app/static"
+STATIC = ROOT / "site"
 PAGE_FILES = ["rescue.js", "local.js", "tracker.js", "hazards.js", "risk.js", "style.css", "rescue.css", "favicon.svg"]
 BROWSER_MODELS = [ROOT / "models" / name for name in ("person.onnx", "water.onnx", "fire.onnx")]
 # Hugging Face redirects large files to its CDN, so they need that one extra source. Blobs are a

@@ -8,7 +8,7 @@
 .lead { margin: 0; color: var(--muted); font-size: 18px; }
 
 .start { max-width: 640px; margin: 0 auto; padding-top: 20px; }
-.start h1, .working h1, .result-head h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 40px); line-height: 1.15; letter-spacing: -0.015em; }
+.start h1, .result-head h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 40px); line-height: 1.15; letter-spacing: -0.015em; }
 .dropzone { position: relative; display: grid; gap: 4px; margin-top: 28px; padding: 56px 20px; text-align: center; background: var(--panel); border: 2px dashed var(--line); border-radius: var(--radius); cursor: pointer; }
 .dropzone:hover, .dropzone.over { border-color: var(--accent); }
 .dropzone:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -21,9 +21,9 @@
 .extra input { display: block; width: 100%; margin-top: 8px; }
 .start .error { margin-top: 8px; }
 
-.working { max-width: 640px; margin: 0 auto; padding-top: 60px; }
-.working progress { width: 100%; height: 14px; margin: 14px 0 8px; accent-color: var(--accent); }
-.working p { margin: 0; color: var(--muted); }
+.working { margin-bottom: 16px; padding: 12px 16px; background: var(--panel); border-radius: 8px; }
+.working progress { display: block; width: 100%; height: 12px; accent-color: var(--accent); }
+.working p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
 
 .result-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 8px 0 18px; }
 .result-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }

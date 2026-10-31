@@ -11,6 +11,7 @@ const WAY_SECONDS = 1.5;  // the arrow stays near the moment it was measured, be
 const RED = "#ff2d20";
 const WAY_COLOUR = "#4dffa6";
 const NUMBER_HEIGHT = 18;
+const HAS_PICTURE = 2;  // the video element's readyState once it can show a frame
 const LOCATION_TIMEOUT_MS = 15000;
 // Someone in a real emergency could stop trying if a page said help was coming, so this never says so.
 const NOT_TOLD = "A live system would share each numbered person's location with officials and send help. This demo is not connected to officials, so nobody has been told and no help is on the way. Call your local emergency services.";
@@ -31,7 +32,7 @@ const coordinates = ({ latitude, longitude }) => `${latitude.toFixed(6)}, ${long
 const capital = (text) => text[0].toUpperCase() + text.slice(1);
 
 function show(section) {
-  for (const id of ["start", "working", "results"]) $(id).hidden = id !== section;
+  for (const id of ["start", "results"]) $(id).hidden = id !== section;
 }
 
 function droneAt(time) {
@@ -208,7 +209,7 @@ function drawNumbered(ctx, x, y, w, h, person, { left, top }) {
 }
 
 function draw() {
-  $("time").textContent = `${clock(player.currentTime)} / ${clock(index?.duration ?? 0)}`;
+  $("time").textContent = `${clock(player.currentTime)} / ${clock(player.duration || 0)}`;
   if (document.activeElement !== $("seek")) $("seek").value = player.currentTime;
   const view = fitted();
   const { ctx, left, top, width, height } = view;
@@ -241,9 +242,8 @@ function hazardsSeen() {
   return fire ? "Fire was seen." : "No water or fire was seen.";
 }
 
-function showResults(result) {
-  videoUrl = result.url;
-  ({ index } = result);
+function showResults(found) {
+  index = found;
   listed = index.people.filter((person) => person.critical).map((person, i) => Object.assign(person, { place: i + 1 }));
   chosen = null;
   const seen = count(index.tracks.length, "person", "people");
@@ -252,32 +252,39 @@ function showResults(result) {
     ? `Out of about ${seen} in the video.`
     : `About ${seen} in the video. ${hazardsSeen()} The software can miss people, and it cannot recognise fights or attacks.`;
   $("report-note").textContent = NOT_TOLD;
+  $("working").hidden = true;
+  $("again").hidden = false;
   refresh();
-  show("results");
-  player.src = videoUrl;
-  $("seek").max = index.duration;
-  player.addEventListener("loadeddata", () => {
-    if (listed.length) choose(listed[0]);
-    else draw();
-  }, { once: true });
+  const begin = () => (listed.length ? choose(listed[0]) : draw());
+  if (player.readyState >= HAS_PICTURE) begin();
+  else player.addEventListener("loadeddata", begin, { once: true });
 }
 
+// Nothing is uploaded, so the video can play at once while it is checked.
 async function check(file) {
   $("start-error").textContent = "";
   flightLog = $("log").files[0] ? parseFlightLog(await $("log").files[0].text()) : [];
-  show("working");
+  videoUrl = URL.createObjectURL(file);
+  listed = [];
+  $("headline").textContent = "Checking your video";
+  $("subhead").textContent = "You can watch it now. Red boxes appear when the check is done.";
   $("bar").removeAttribute("value");
+  $("working").hidden = false;
+  $("again").hidden = true;
+  renderReport();
+  renderPeople();
+  show("results");
+  player.src = videoUrl;
   try {
-    const found = await readVideoLocation(file);
-    area = found ? { ...found, source: "from the video file" } : null;
-    const result = await analyse(file, (progress, message) => {
+    const place = await readVideoLocation(file);
+    area = place ? { ...place, source: "from the video file" } : null;
+    showResults(await analyse(videoUrl, (progress, message) => {
       if (progress) $("bar").value = progress;
       $("working-note").textContent = message;
-    });
-    showResults(result);
+    }));
   } catch (error) {
+    startAgain();
     $("start-error").textContent = error.message;
-    show("start");
   }
 }
 
@@ -288,6 +295,7 @@ function startAgain() {
   if (videoUrl) URL.revokeObjectURL(videoUrl);
   videoUrl = null;
   index = null;
+  listed = [];
   chosen = null;
   drone = null;
   area = null;
@@ -306,6 +314,7 @@ $("file").addEventListener("change", (event) => {
   if (event.target.files[0]) check(event.target.files[0]);
   event.target.value = "";
 });
+if ($("file").files[0]) check($("file").files[0]);  // chosen before this script had loaded
 const drop = $("drop");
 drop.addEventListener("dragover", (event) => { event.preventDefault(); drop.classList.add("over"); });
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
@@ -356,6 +365,10 @@ $("play").addEventListener("click", togglePlay);
 $("stage").addEventListener("click", togglePlay);
 $("seek").addEventListener("input", (event) => {
   player.currentTime = Number(event.target.value);
+  draw();
+});
+player.addEventListener("loadedmetadata", () => {
+  $("seek").max = player.duration;
   draw();
 });
 player.addEventListener("play", () => {

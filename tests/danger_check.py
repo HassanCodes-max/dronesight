@@ -18,12 +18,12 @@ import websockets
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from browser_check import BROWSERS, HAS_BOXES, PORT, Page, report  # noqa: E402
+from browser_check import BROWSERS, FLAGS, HAS_BOXES, PORT, Page, report  # noqa: E402
 
 LIMIT_SECONDS = 420
 RULES = """(async () => {
   const { assess, rank } = await import('./risk.js');
-  const { smokeShare } = await import('./hazards.js');
+  const { dropSmokyWater, smokeShare } = await import('./hazards.js');
   const person = (values) => ({ id: 1, hazard: null, depthM: 0, distanceM: null, nearestHazard: null, alone: false, still: false, ...values });
   const critical = (values) => assess(person(values)).critical;
   const order = (...people) => rank(people.map((values, i) => person({ id: i + 1, ...values }))).map((p) => p.id);
@@ -40,6 +40,14 @@ RULES = """(async () => {
   out['fire beats shallow water'] = order({ hazard: 'flood water', depthM: 1 }, { hazard: 'fire' })[0] === 2;
   out['red always comes before black'] = order({ hazard: 'smoke', alone: true }, { distanceM: 4, nearestHazard: 'fire' })[0] === 2;
   out['smoke is measured inside the frame only'] = smokeShare([[0, 0, 0.5, 1]]) === 0.5 && smokeShare([[-1, -1, 0.5, 0.5]]) === 0.25 && smokeShare([]) === 0;
+  const frame = (smoke) => ({ flood: { mask: new Uint8Array([1, 1]) }, fire: { smoke } });
+  const heavy = [[0, 0, 0.5, 1]];
+  const mixed = [frame(heavy), frame([]), frame([]), frame([])];
+  dropSmokyWater(mixed);
+  out['one smoky frame in four rules out water in the whole video'] = mixed.every((f) => f.flood.mask[0] === 0);
+  const calm = [frame(heavy), frame([]), frame([]), frame([]), frame([])];
+  dropSmokyWater(calm);
+  out['a rarer smoky frame only rules out its own water'] = calm[0].flood.mask[0] === 0 && calm[1].flood.mask[0] === 1;
   out['reasons are explained'] = assess(person({ hazard: 'flood water', depthM: 1, alone: true, still: true })).reasons.join() === 'in flood water,alone,not moving';
   return JSON.stringify(out);
 })()"""
@@ -80,7 +88,7 @@ MAP = """(async () => {
 
 
 async def run(url, video, out):
-    target = next(t for t in httpx.get(f"http://127.0.0.1:{PORT}/json").json() if t["type"] == "page")
+    target = next(t for t in httpx.get(f"http://127.0.0.1:{PORT}/json").json() if t["type"] == "page" and t["url"] == "about:blank")
     async with websockets.connect(target["webSocketDebuggerUrl"], max_size=None, ping_interval=None) as socket:
         page = Page(socket)
         for domain in ["Page", "Runtime", "Log", "DOM", "Network"]:
@@ -101,9 +109,11 @@ async def run(url, video, out):
         started = time.perf_counter()
         await add_video()
         checks["progress shows"] = await page.wait("document.getElementById('working').offsetHeight > 0", 10)
+        checks["the video shows within 5 seconds"] = await page.wait("document.getElementById('player').readyState >= 2", 5)
+        print("video showing after", round(time.perf_counter() - started, 1), "s", flush=True)
         await asyncio.sleep(1)
         await page.shot(Path(out) / "working.png")
-        checks["analysis finishes"] = await page.wait("document.getElementById('results').offsetHeight > 0", LIMIT_SECONDS)
+        checks["analysis finishes"] = await page.wait("document.getElementById('working').hidden", LIMIT_SECONDS)
         print("finished after", round(time.perf_counter() - started), "s:", await page.js("document.getElementById('headline').textContent"), "|",
               await page.js("document.getElementById('subhead').textContent"), "| error:",
               await page.js("document.getElementById('start-error').textContent"), flush=True)
@@ -114,6 +124,8 @@ async def run(url, video, out):
             checks["a calm video says nobody is in danger"] = await page.js("document.getElementById('headline').textContent === 'Nobody in danger was found'")
             checks["everyone else needs nothing"] = await page.js("document.getElementById('panel').hidden")
             checks["no report is offered"] = await page.js("document.getElementById('report').hidden")
+            await page.js("document.getElementById('player').currentTime = 1")
+            await asyncio.sleep(1.5)
             checks["boxes are drawn on the video"] = await page.js(HAS_BOXES)
             await page.shot(Path(out) / "results.png")
         else:
@@ -159,7 +171,7 @@ async def run(url, video, out):
         checks["another video can be checked"] = await page.wait("document.getElementById('start').offsetHeight > 0", 5)
         before = len(page.events)
         await add_video()
-        await page.wait("/Working on your/.test(document.getElementById('working-note').textContent)", 60)
+        await page.wait("/Checking on your/.test(document.getElementById('working-note').textContent)", 60)
         again = [e["params"]["request"]["url"] for e in page.events[before:] if e.get("method") == "Network.requestWillBeSent"]
         large = [u for u in again if u.endswith((".onnx", ".wasm")) or "xet" in u]
         checks["a second video downloads nothing big"] = not large
@@ -173,8 +185,7 @@ def main(url, video, out):
     Path(out).mkdir(parents=True, exist_ok=True)
     binary = next(b for b in BROWSERS if Path(b).exists())
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as profile:
-        browser = subprocess.Popen([binary, "--headless=new", f"--remote-debugging-port={PORT}", f"--user-data-dir={profile}",
-                                    "--no-first-run", "about:blank"])
+        browser = subprocess.Popen([binary, *FLAGS, f"--user-data-dir={profile}", "about:blank"])
         try:
             for _ in range(40):
                 try:

@@ -8,7 +8,7 @@ After a disaster, teams come back with hours of drone video and someone has to w
 
 **This is a research demo, not a rescue system.** The models miss people, the danger rules have not been checked by emergency responders, and locations are estimates. Nothing is sent to officials unless you send it yourself. In a real emergency, call your local emergency services.
 
-**Status:** live on a free static site with no server. It has not yet been tried on real flood or fire footage: danger ranking was tested on clips panned across disaster photos, and false alarms were checked on one real, calm video.
+**Status:** live on a free static site with no server. It has not yet been tried on real flood or fire footage: the rules were tested on clips panned across disaster photos, and false alarms were checked on one real, calm video.
 
 ## How it works
 
@@ -28,7 +28,7 @@ The video file's own location tag, a DJI .SRT log, or the drone's details: turn 
 A report you can copy or open in WhatsApp
 ```
 
-**Who turns red** comes from fixed rules in `dronesight/app/static/risk.js`, so every decision can be explained. A person is red if they are in water or fire, within 5 m of flames, or lying still and alone. Dry land beside water stays black, and so does smoke alone, because its boxes are coarse. The water model takes smoke for water, so its result is ignored in any frame that is 10% or more smoke; on the fire test clip this took 24 people marked red down to 9, none of them wrongly called in water. Points only order the red people: fire first, then how far they are from safety, then being alone and not moving. The rules are written by hand, not learned from responders' decisions.
+**Who turns red** comes from fixed rules in `site/risk.js`, so every decision can be explained. A person is red if they are in water or fire, within 5 m of flames, or lying still and alone. Dry land beside water stays black, and so does smoke alone, because its boxes are coarse. The water model takes smoke for water, so its result is ignored in any frame that is 10% or more smoke, and in the whole video once a quarter of its frames are, because smoke drifts in and out of view. Points only order the red people: fire first, then how far they are from safety, then being alone and not moving. The rules are written by hand, not learned from responders' decisions.
 
 **Distances** use each person's own height as the ruler, because an ordinary video has no scale. They are rough, and worse when the camera looks straight down, where people appear short.
 
@@ -38,92 +38,59 @@ A report you can copy or open in WhatsApp
 
 **The shortcut** is the straight line to the nearest safe ground, measured on the hazard mask, plus a Google Maps directions link when your team's position is given. Neither knows whether a route is passable.
 
-**Reporting** stays with a person. The page shows a demo alert, writes the report and opens WhatsApp, but it never says officials were told, because someone in an emergency could stop trying if they believed help was coming. Telegram alerts are written in the worker but switched off.
+**Reporting** stays with a person. The page shows a demo alert, writes the report and opens WhatsApp, but it never says officials were told, because someone in an emergency could stop trying if they believed help was coming.
 
 **What it cannot see.** No model here recognises fights, attacks or harassment, so a video of one gets no red box unless someone also ends up lying still and alone.
 
-**A language model was removed.** A small one wrote plain-language explanations, but it invented times, contradicted itself and promised a team would arrive quickly, so the page now writes every message from the measurements. `worker/` remains for the older question box and is not used by the live page.
+**A language model was removed.** A small one wrote plain-language explanations, but it invented times, contradicted itself and promised a team would arrive quickly, so the page now writes every message from the measurements.
 
-The recorded flight page has its own pipeline:
-
-```
-Browser (plain JS, no third-party scripts)
-   |
-FastAPI: accounts, uploads, search, rate limits
-   |
-SQLite: users, videos, every detection with its time and track
-   |
-Worker process: decodes video, runs YOLO11s at 1280 through ONNX Runtime on CPU, tracks people
-```
-
-**Your own video:** the free site has no server to send a file to, so the visitor's device does the work. ONNX Runtime Web runs the full 1280 people model on their graphics card through WebGPU, or on their processor through WebAssembly. `tracker.js` removes the drone's own motion by comparing frames, predicts where each person will be, matches sure detections first and lets weak ones keep a track alive, then fills gaps from both sides, because analysis runs after the flight. It samples up to five times a second, as many as fit about seven minutes on that device. `tests/upload_check.py` checks that the page makes no upload request. On a 29-second, 1080p Pexels video it followed about 186 people in just under 3 minutes on the development laptop, and the median person was followed for 16 seconds. That is a visual check on one video, not a tracking benchmark.
+**Tracking** runs in the browser. ONNX Runtime Web runs the full 1280 people model on the visitor's graphics card through WebGPU, or on their processor through WebAssembly. `tracker.js` removes the drone's own motion by comparing frames, predicts where each person will be, matches sure detections first and lets weak ones keep a track alive, then fills gaps from both sides, because analysis runs after the flight. On a 29-second, 1080p Pexels video it followed about 186 people, and the median person was followed for 16 seconds. That is a visual check on one video, not a tracking benchmark.
 
 A smaller 960 model was tried first for speed. Its test recall looked close, at 37% against 44% on VisDrone, but on that real video it found only 9 to 24 people per frame against the full model's 55 to 118, so it was dropped.
 
-The model runs through ONNX, so the web server needs no PyTorch or GPU. At the 1280 input it takes about 565 ms per frame on a Kaggle CPU and about 650 ms on the development laptop, so a 3-minute flight sampled every 0.25 s indexes in about 8 minutes.
+**Speed.** Nothing is uploaded, so the video plays within seconds and the check runs while it plays. Almost all the check's time is the people model, at about 1 second a frame on the development laptop, so the page aims to finish in about a minute by choosing how many frames to read. On the 29-second video:
 
-Search is deterministic and runs in the browser: a question becomes a filter on the flight's detections, which also drive the live boxes and the activity timeline. It costs nothing per query, and text can never become instructions.
+| Frames read a second | Time | People followed | Median time followed |
+|---|---|---|---|
+| 5 | 196 s | 186 | 16.2 s |
+| 3 (used up to about 20 seconds) | 114 s | 174 | 16.7 s |
+| **2 (used up to about 30 seconds)** | **79 s** | **172** | **17.0 s** |
+| **1 (used for longer videos)** | **49 s** | **156** | **16.0 s** |
 
-Free questions go to a Cloudflare Worker that calls Workers AI. The facts live in the worker, so a visitor cannot supply false ones. The model has no tools, its replies are filtered for leaked instructions and shown as plain text, and requests are rate limited by IP and origin.
+Fewer people at lower rates can mean fewer broken tracks as well as more missed people, and this is one video, so it is a guide and not a benchmark. The first video also downloads about 200 MB of models, which are then kept in the browser.
 
 ## Security
 
-No website is attack-proof. These are layered defences, and `tests/test_app.py` attacks them directly.
+No website is attack-proof. This one avoids most attacks by having nothing to attack: it is static files on Hugging Face, with no server, accounts or database of its own.
 
-**Built and tested**
+- **Your video stays on your device.** It is opened from a local file and never sent anywhere, and `tests/danger_check.py` fails if the page sends any data out.
+- **Scripts:** a Content Security Policy allows only the site's own scripts, and the ONNX runtime is self-hosted and pinned by hash in `deploy/fetch_ort.py`.
+- **Text from a file or a visitor** only ever reaches the page through `textContent`, never as HTML.
+- **Location** is only read from the browser after a click, and the browser asks permission too.
 
-- **Passwords and sessions:** Argon2 hashing, only hashes of session tokens are stored, and cookies are HttpOnly and SameSite=Strict.
-- **Access control:** another user's video returns 404 on every route, so its existence is not revealed.
-- **Brute force and abuse:** rate limits per IP on logins and the API, which forged forwarded headers cannot dodge.
-- **Runaway costs:** per-user upload quotas, plus a site-wide daily cap on uploads and processing time.
-- **Uploads:** declared size is checked and bytes are counted while streaming, file type is checked from content, file names are server-generated, and videos are deleted after 24 hours.
-- **Browser attacks:** strict Content Security Policy, frame blocking, cross-site write rejection, and server text is only ever rendered as text.
-- **SQL injection:** every value is passed as a query parameter.
-
-**Not done yet**
-
-- **DDoS:** the app can only limit requests that reach it. Real volumetric protection needs a CDN such as Cloudflare in front, which needs a custom domain.
-- **Worker isolation:** the worker is a separate process, but it shares a container with the web server.
-- **Accounts:** no email verification or password reset yet.
-- **Rate limits:** counters are per process and reset on restart.
-- **Independent testing:** no external scan or penetration test has been run.
-
-`tests/worker_check.py` runs the built worker in a real browser against refused origins, oversized questions, odd mission names, leaked instructions and rate limits. Visitors can only choose which critical person to alert about, and the worker writes every message itself, so a visitor's text never reaches Telegram. Each alert says it is a simulation, and nothing contacts real emergency services.
+**Not done:** static hosts cannot send headers, so the policy sits in a meta tag, which cannot stop framing. Protection against a traffic flood is whatever Hugging Face provides. No external scan or penetration test has been run.
 
 ## Run locally
 
-Put the exported model at `models/person.onnx` and a sample at `demo/flight.mp4`, then:
-
 ```
-pip install -r requirements-web.txt
-python -m dronesight.app.seed demo/flight.mp4 "Sample flight"
-python -m dronesight.app.worker
-python -m uvicorn dronesight.app.main:app --port 8000
+pip install -r requirements.txt
+python deploy/fetch_ort.py
+python deploy/build_static.py dist
+python -m http.server 8000 --directory dist
 ```
 
-Run the worker and the server in separate terminals, then open http://127.0.0.1:8000. Tests run with `python -m pytest tests`.
+The models go in `models/`: `person.onnx`, `water.onnx` and `fire.onnx`, exported by `kaggle/browser` and `kaggle/hazards`. To check the whole page, give it any video:
+
+```
+python tests/danger_check.py http://127.0.0.1:8000 your-video.mp4 outputs/check
+```
 
 ## Deploy
 
-The live demo is a static build. It needs no server, so there is nothing to keep running and no backend to attack, but visitors can only explore the sample flight:
-
 ```
-python -m dronesight.app.seed demo/flight.mp4 "Sample flight"
 python deploy/build_static.py dist
 python deploy/push_static.py <your-hf-username>/dronesight dist
 ```
-
-Static hosts cannot send security headers, so its Content Security Policy is in a meta tag, which cannot stop framing.
-
-`run_public.bat` serves the full site from a Windows machine through a temporary Cloudflare link, which needs no account or payment. It only works while that machine is on, and the link changes on each restart. Sign-up, search, upload and the attack checks have passed through that link.
-
-For a permanent home, the site runs as two containers on an Ubuntu server: the app, and Caddy in front for HTTPS. The app is not exposed directly, so its rate limits see each visitor's real IP.
-
-```
-sh deploy/push_server.sh azureuser@<server-ip> <site-domain>
-```
-
-The Dockerfile has not been built yet, because the development machine has no Docker. Hugging Face Docker Spaces were the first plan, but they now need a paid plan.
 
 ## Experiments
 
@@ -225,7 +192,7 @@ Found and correct are at confidence 0.25, with a box counted correct at IoU 0.5.
 | Flood | YOLO11s-seg | FloodNet, 398 labelled images, split by blocks of neighbouring frames | Pixel IoU 0.543, mask mAP50 0.170 |
 | Fire and smoke | YOLO11s | D-Fire | mAP50-95 0.415, mAP50 0.739: smoke 0.476, fire 0.354 |
 
-D-Fire is largely not aerial, so its score says little about a drone's view. Fire boxes were checked by eye on C2A's aerial scenes: they land on real flames but miss some, for example in forest scenes. Boxes also marked bystanders as in the fire, so the mission cuts each box down to flame-coloured pixels.
+D-Fire is largely not aerial, so its score says little about a drone's view. Fire boxes were checked by eye on C2A's aerial scenes: they land on real flames but miss some, for example in forest scenes. Boxes also marked bystanders as in the fire, so the page cuts each box down to flame-coloured pixels.
 
 ### Experiments 5 and 6: tracing water by pixel
 
@@ -242,12 +209,11 @@ Experiment 5 traced grey and blue water but missed brown floodwater and shaded g
 
 The source code is under the MIT licence. It does not cover images, video or datasets, which belong to their own owners. This is a free, non-commercial student project, and anything here will be removed if an owner asks.
 
-- **Mission scenes:** [C2A](https://github.com/Ragib-Amin-Nihal/C2A) by Nihal et al. (2024), which adds people from LSP/MPII-MPHB to disaster photos from [AIDER](https://github.com/ckyrkou/AIDER) by Kyrkou and Theocharides (2019), released for non-commercial and academic use. C2A's repository states no licence.
-- **Sample flight:** [VisDrone](https://github.com/VisDrone/VisDrone-Dataset) by Zhu et al. (2021), AISKYEYE team, Tianjin University. Its repository states no licence, so it is shown as a non-commercial demonstration.
-- **Training only, no images republished:** [HERIDAL](https://www.kaggle.com/datasets/mariannaesposito/heridal-4k), FloodNet, D-Fire and [Flood Area Segmentation](https://www.kaggle.com/datasets/faizalkarim/flood-area-segmentation).
+- **Training only, no images republished:** [VisDrone](https://github.com/VisDrone/VisDrone-Dataset) by Zhu et al. (2021), [HERIDAL](https://www.kaggle.com/datasets/mariannaesposito/heridal-4k), [C2A](https://github.com/Ragib-Amin-Nihal/C2A) by Nihal et al. (2024), FloodNet, D-Fire and [Flood Area Segmentation](https://www.kaggle.com/datasets/faizalkarim/flood-area-segmentation).
 
 ## Update log
 
+- Made the video appear at once, with the check running while it plays, and removed the retired simulation, server and assistant code. They remain in the git history.
 - Made the result binary: red numbered boxes for anyone in water, in fire, beside flames or lying still and alone, black boxes for everyone else, and a list that explains only the numbered people.
 - Rebuilt the page around one job: add a video and see who needs help first. Water and fire are now checked on every video, so there is nothing to choose, and the language model was replaced by messages written from the measurements. On a real, calm park video with about 186 people it raised no false alarms.
 - Added danger ranking, map locations and plain-language explanations on visitors' own videos, all in the browser.

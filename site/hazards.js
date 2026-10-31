@@ -16,6 +16,7 @@ const STILL_HEIGHTS = 0.6;
 const LYING_RATIO = 1.2;  // wider than tall, which a standing person's box never is from the side
 const MIN_HAZARD_SHARE = 0.005;  // specks are usually false alarms, so they are ignored
 const MAX_SMOKE_SHARE = 0.1;  // with this much of the frame in smoke, its water result is not trusted
+const SMOKY_VIDEO_SHARE = 0.25;  // with this many smoky frames, no water result in the video is trusted
 
 export const HAZARD_SECONDS = 2;
 export const HAZARD_MODELS = [WATER.model, FIRE.model];
@@ -111,8 +112,13 @@ export const smokeShare = (boxes) => boxes.reduce((sum, [x1, y1, x2, y2]) => sum
 export async function hazardFrame(ort, sessions, video, t) {
   const flood = await floodFrame(ort, sessions[0], video);
   const fire = await fireFrame(ort, sessions[1], video);
-  if (smokeShare(fire.smoke) >= MAX_SMOKE_SHARE) flood.mask.fill(0);  // the water model takes smoke for water
   return { t, flood: { ...flood, t }, fire: { ...fire, t } };
+}
+
+// The water model takes smoke for water, and smoke drifts in and out of view between frames.
+export function dropSmokyWater(frames) {
+  const smoky = frames.filter((frame) => smokeShare(frame.fire.smoke) >= MAX_SMOKE_SHARE);
+  for (const frame of smoky.length / frames.length >= SMOKY_VIDEO_SHARE ? frames : smoky) frame.flood.mask.fill(0);
 }
 
 // For every cell, how far the nearest seed is and which one it is, in two sweeps.
