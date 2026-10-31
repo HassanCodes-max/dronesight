@@ -6,6 +6,8 @@ const $ = (id) => document.getElementById(id);
 const FLIGHT_SECONDS = 1.1;   // between neighbouring sectors
 const SCAN_SECONDS = 3.2;
 const LOCK_SECONDS = 2.0;
+const QUICK_REPORT_SECONDS = 0.5;  // later critical people in a sector, already in frame
+const MAX_REVISITS = 5;  // battery limit: the rest of the queue goes to headquarters as a list
 const ZOOM = 3;
 const SPEEDS = [1, 2, 4];
 const REPORTED_LEVELS = new Set(["CRITICAL", "HIGH"]);
@@ -43,8 +45,8 @@ function surveyOrder() {
 
 function newState() {
   const tasks = surveyOrder().flatMap((sector) => [{ type: "fly", sector }, { type: "scan", sector }]);
-  return { drone: { ...HOME }, tasks, task: null, sector: null, reveal: {}, seen: new Set(), reported: new Set(),
-    queue: [], clock: 0, lock: null, phase: "Taking off", done: false };
+  return { drone: { ...HOME }, tasks, task: null, sector: null, reveal: {}, seen: new Set(), reported: new Set(), locked: new Set(),
+    queue: [], remaining: [], clock: 0, lock: null, phase: "Taking off", done: false };
 }
 
 function start() {
@@ -63,7 +65,8 @@ function discover(person, sector) {
   state.seen.add(person.id);
   if (person.level === "CRITICAL") {
     // Critical people interrupt the survey at once.
-    state.tasks.unshift({ type: "lock", sector, person }, { type: "scan", sector, resume: true });
+    state.tasks.unshift({ type: "lock", sector, person, quick: state.locked.has(sector.id) }, { type: "scan", sector, resume: true });
+    state.locked.add(sector.id);
     state.task = null;
   } else if (REPORTED_LEVELS.has(person.level)) {
     state.queue.push({ person, sector });
@@ -86,8 +89,8 @@ function startTask(task) {
     state.phase = `Searching sector ${task.sector.id}`;
   } else if (task.type === "lock") {
     state.sector = task.sector;
-    state.lock = task.person;
-    task.duration = LOCK_SECONDS;
+    state.lock = task.quick ? null : task.person;
+    task.duration = task.quick ? QUICK_REPORT_SECONDS : LOCK_SECONDS;
     state.phase = `${task.person.level === "CRITICAL" ? "Critical person" : "Returning to person"} in sector ${task.sector.id}`;
   } else if (task.type === "home") {
     task.from = { ...state.drone };
@@ -103,12 +106,15 @@ function finishTask(task) {
   }
   if (task.type === "scan" && !state.tasks.some((t) => t.type === "scan")) {
     // The survey is finished, so visit everyone queued, most urgent first.
-    state.tasks.push(...state.queue.flatMap(({ person, sector }) => [{ type: "fly", sector }, { type: "lock", sector, person }]));
+    const visits = state.queue.slice(0, MAX_REVISITS);
+    state.tasks.push(...visits.flatMap(({ person, sector }) => [{ type: "fly", sector }, { type: "lock", sector, person }]));
+    state.remaining = state.queue.slice(MAX_REVISITS);
     state.queue = [];
     state.tasks.push({ type: "home" });
     updateTally();
   }
   if (task.type === "home") {
+    state.remaining.forEach(({ person, sector }) => report(person, sector));
     state.done = true;
     state.phase = `Mission complete: ${state.reported.size} people reported to headquarters`;
   }

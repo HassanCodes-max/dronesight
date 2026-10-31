@@ -84,6 +84,12 @@ def test_alone_and_still_raise_priority_and_are_explained():
     assert alone.reasons == ["in flood water", "alone", "not moving"]
 
 
+def test_equal_scores_go_to_whoever_is_furthest_from_safety():
+    near = person(1, hazard="flood water", depth_m=9, neighbours=1)
+    far = person(2, hazard="flood water", depth_m=28, neighbours=1, confidence=0.6)
+    assert [p.id for p in rank([near, far])] == [2, 1]
+
+
 def test_person_far_from_danger_is_clear_even_if_alone():
     safe = rank([person(1, distance_m=200, nearest_hazard="fire", neighbours=0, still=True)])[0]
     assert safe.level == "CLEAR" and safe.score == 0 and safe.reasons == []

@@ -21,9 +21,9 @@ READ_ALERTS = """[...document.querySelectorAll('.alert')].reverse().map(a => ({
     why: a.querySelector('p').textContent, coords: a.querySelector('.coords').textContent}))"""
 TALLY = """Object.fromEntries(['found', 'critical', 'reported', 'waiting'].map(
     id => [id, Number(document.getElementById(id).textContent)]))"""
-HAS_PIXELS = """(() => { const c = document.getElementById('{}');
+HAS_PIXELS = """(() => { const c = document.getElementById('CANVAS');
     const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    for (let i = 0; i < d.length; i += 4) if (d[i] > 40) return true; return false; }})()"""
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 40) return true; return false; })()"""
 
 
 async def run(url, out):
@@ -38,8 +38,8 @@ async def run(url, out):
         checks = {}
         checks["mission starts by itself"] = await page.wait("/Flying|Searching/.test(document.getElementById('status').textContent)", 20)
         await asyncio.sleep(3)
-        checks["camera shows the scene"] = await page.js(HAS_PIXELS.format("camera"))
-        checks["map shows the area"] = await page.js(HAS_PIXELS.format("map"))
+        checks["camera shows the scene"] = await page.js(HAS_PIXELS.replace("CANVAS", "camera"))
+        checks["map shows the area"] = await page.js(HAS_PIXELS.replace("CANVAS", "map"))
         await page.js("document.getElementById('speed').click(); document.getElementById('speed').click()")
         checks["first alert arrives"] = await page.wait("document.querySelectorAll('.alert').length > 0", 40)
         await page.shot(Path(out) / "mission_running.png")

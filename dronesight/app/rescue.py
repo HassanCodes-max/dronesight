@@ -106,5 +106,5 @@ def assess(person):
 
 
 def rank(people):
-    """Most urgent first. Ties go to the surer detection, so a team reaches a real person first."""
-    return sorted((assess(person) for person in people), key=lambda p: (-p.score, -p.confidence, p.id))
+    """Most urgent first. Ties go to whoever is furthest from safety, then to the surer detection."""
+    return sorted((assess(person) for person in people), key=lambda p: (-p.score, -p.depth_m, -p.confidence, p.id))
