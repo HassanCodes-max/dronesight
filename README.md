@@ -101,7 +101,7 @@ For a permanent home, the site runs as two containers on an Ubuntu server: the a
 sh deploy/push_server.sh azureuser@<server-ip> <site-domain>
 ```
 
-The Dockerfile has not been built yet, because the development machine has no Docker. Hugging Face Docker Spaces were the first plan, but they now need a paid plan. Sample footage comes from VisDrone. Mirrors of that dataset state different licences, so check the official terms before publishing.
+The Dockerfile has not been built yet, because the development machine has no Docker. Hugging Face Docker Spaces were the first plan, but they now need a paid plan.
 
 ## Experiments
 
@@ -214,7 +214,15 @@ Test pixel IoU, higher is better, with both models scored on the same images. Bo
 | Experiment 5 | FloodNet, wide colour shifting | 0.571 | 0.500 |
 | **Experiment 6 (shipped)** | FloodNet + Flood Area, narrow colour shifting | **0.574** | **0.848** |
 
-Experiment 5 traced grey and blue water but missed brown floodwater and shaded grey roofs, because FloodNet is shot straight down and its water is rarely muddy. Colour shifting could not close that gap. Experiment 6 adds Flood Area Segmentation, 290 photos of real floods, and picks the best epoch on the mean validation IoU of both datasets. Flood Area is split at random, so photos of one flood can land on both sides, and 0.848 may be a little high. Its Kaggle listing says CC0, but it also says its images were collected from the internet, so its weights are used here and its images are not republished.
+Experiment 5 traced grey and blue water but missed brown floodwater and shaded grey roofs, because FloodNet is shot straight down and its water is rarely muddy. Colour shifting could not close that gap. Experiment 6 adds Flood Area Segmentation, 290 photos of real floods, and picks the best epoch on the mean validation IoU of both datasets. Flood Area is split at random, so photos of one flood can land on both sides, and 0.848 may be a little high. Its Kaggle listing says CC0, but it also says its images were collected from the internet, so only the trained weights are used here and its images are not republished.
+
+## Data and credits
+
+The source code is under the MIT licence. It does not cover images, video or datasets, which belong to their own owners. This is a free, non-commercial student project, and anything here will be removed if an owner asks.
+
+- **Mission scenes:** [C2A](https://github.com/Ragib-Amin-Nihal/C2A) by Nihal et al. (2024), which adds people from LSP/MPII-MPHB to disaster photos from [AIDER](https://github.com/ckyrkou/AIDER) by Kyrkou and Theocharides (2019), released for non-commercial and academic use. C2A's repository states no licence.
+- **Sample flight:** [VisDrone](https://github.com/VisDrone/VisDrone-Dataset) by Zhu et al. (2021), AISKYEYE team, Tianjin University. Its repository states no licence, so it is shown as a non-commercial demonstration.
+- **Training only, no images republished:** [HERIDAL](https://www.kaggle.com/datasets/mariannaesposito/heridal-4k), FloodNet, D-Fire and [Flood Area Segmentation](https://www.kaggle.com/datasets/faizalkarim/flood-area-segmentation).
 
 ## Update log
 
