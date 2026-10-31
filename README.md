@@ -131,7 +131,7 @@ Found and correct are recall and precision at confidence 0.25.
 | **VisDrone + HERIDAL (shipped)** | 1280 | Area | **0.250** | **65% / 75%** | **34% / 66%** |
 
 - **Shrinking:** area averaging keeps tiny people that linear shrinking loses on 4K frames, at no speed cost. The site now uses it.
-- **Input size:** moving from 960 to 1280 adds about 40% CPU time per frame, 579 ms against 410 ms on Kaggle.
+- **Input size:** moving from 960 to 1280 costs 1.4 to 2.3 times the CPU time: 579 ms against 410 ms per frame on Kaggle, and 115 s against 50 s to index the sample flight on the development laptop.
 - **Tiling:** 2 x 2 tiles plus the whole frame scored 0.245 for five model passes per frame with linear shrinking, against 0.244 for one pass at 1280, so it was dropped.
 - **C2A:** with 2 x 2 tiles, only 16% of the all-three model's HERIDAL boxes were correct, against 51% without C2A, so the training run drops it.
 
