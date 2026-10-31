@@ -4,7 +4,7 @@ Ask your drone footage questions in plain English.
 
 Drone teams return with hours of video and scrub through it by hand to find what matters, for example in flood response, search and rescue, or site inspection. DroneSight finds the people in a flight, indexes every detection by time, and takes you straight to the moment you asked about.
 
-**Status:** working web app with a real trained detector, tested locally. It is not deployed yet. Search currently understands questions about people, by count and time. Map pins, LLM questions and before and after comparison are planned, not built.
+**Status:** working web app with a real trained detector. It runs publicly from a laptop through a temporary link, and has no permanent host yet. Search currently understands questions about people, by count and time. Map pins, LLM questions and before and after comparison are planned, not built.
 
 ## How it works
 
@@ -59,7 +59,9 @@ Run the worker and the server in separate terminals, then open http://127.0.0.1:
 
 ## Deploy
 
-The site runs as two containers on an Ubuntu server: the app, and Caddy in front for HTTPS. The app is not exposed directly, so its rate limits see each visitor's real IP.
+`run_public.bat` serves the site from a Windows machine through a temporary Cloudflare link, which needs no account or payment. It only works while that machine is on, and the link changes on each restart. Sign-up, search, upload and the attack checks have passed through that link.
+
+For a permanent home, the site runs as two containers on an Ubuntu server: the app, and Caddy in front for HTTPS. The app is not exposed directly, so its rate limits see each visitor's real IP.
 
 ```
 sh deploy/push_server.sh azureuser@<server-ip> <site-domain>
