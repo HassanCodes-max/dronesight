@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-edition="server">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DroneSight: who needs help first in a drone video</title>
+  <meta name="description" content="Add a drone video. See who is in most danger, why, and where. Your video stays on your device.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="rescue.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>DroneSight</a>
+  </header>
+
+  <main class="rescue">
+    <section id="start" class="start">
+      <h1>See who needs help first in a drone video.</h1>
+      <p class="lead">Add a video. It checks for water and fire by itself, and shows the people in most danger first.</p>
+      <label id="drop" class="dropzone">
+        <input id="file" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm">
+        <strong>Add your video</strong>
+        <span>MP4 or MOV, up to 3 minutes. It stays on your device and is never uploaded.</span>
+      </label>
+      <p id="start-error" class="error" role="alert"></p>
+      <details class="extra">
+        <summary>Have a DJI flight log? Add it for exact locations</summary>
+        <input id="log" type="file" accept=".srt,.SRT" aria-label="DJI flight log, an SRT file">
+      </details>
+    </section>
+
+    <section id="working" class="working" hidden>
+      <h1 id="working-title">Checking your video</h1>
+      <progress id="bar" max="1" value="0" aria-label="Progress"></progress>
+      <p id="working-note" role="status"></p>
+    </section>
+
+    <section id="results" hidden>
+      <div class="result-head">
+        <div>
+          <h1 id="headline"></h1>
+          <p id="subhead" class="lead"></p>
+        </div>
+        <button id="again" class="control" type="button">Check another video</button>
+      </div>
+
+      <div id="report" class="report" hidden>
+        <div>
+          <strong>Report ready for officials</strong>
+          <p id="report-note"></p>
+        </div>
+        <div class="report-actions">
+          <a id="report-send" class="primary" target="_blank" rel="noopener noreferrer">Send on WhatsApp</a>
+          <button id="report-copy" class="control" type="button">Copy report</button>
+        </div>
+      </div>
+
+      <div class="result-grid">
+        <div>
+          <div id="stage" class="stage">
+            <video id="player" playsinline muted preload="auto"></video>
+            <canvas id="overlay" aria-hidden="true"></canvas>
+          </div>
+          <div class="controls">
+            <button id="play" class="control" type="button">Play</button>
+            <input id="seek" class="seek" type="range" min="0" max="0" step="0.05" value="0" aria-label="Position in the video">
+            <span id="time" class="time">0:00</span>
+          </div>
+          <ul class="colour-key">
+            <li><span class="dot critical"></span>Critical</li>
+            <li><span class="dot high"></span>At risk</li>
+            <li><span class="dot other"></span>Others</li>
+            <li><span class="dot hazard"></span>Water</li>
+            <li><span class="dot flame"></span>Fire</li>
+            <li><span class="dot way"></span>Quickest way out</li>
+          </ul>
+        </div>
+
+        <aside class="people-panel" aria-label="People found">
+          <div id="location-note" class="location-note">
+            <p id="location-text"></p>
+            <button id="use-my-location" class="control" type="button">Use my current location</button>
+          </div>
+          <details id="where" class="where">
+            <summary>Enter the drone's details for each person's exact spot</summary>
+            <form id="where-form">
+              <p class="hint">These come from your flight app. Tilt is 0 for straight down.</p>
+              <div class="fields">
+                <label>Drone latitude <input id="drone-lat" inputmode="decimal" required></label>
+                <label>Drone longitude <input id="drone-lon" inputmode="decimal" required></label>
+                <label>Height, metres <input id="drone-height" inputmode="decimal" required></label>
+                <label>Heading, degrees <input id="drone-heading" inputmode="decimal" value="0"></label>
+                <label>Camera tilt, degrees <input id="drone-tilt" inputmode="decimal" value="0"></label>
+                <label>Your team's latitude <input id="team-lat" inputmode="decimal"></label>
+                <label>Your team's longitude <input id="team-lon" inputmode="decimal"></label>
+              </div>
+              <button class="primary" type="submit">Show exact spots</button>
+              <p id="where-error" class="error" role="alert"></p>
+            </form>
+          </details>
+          <h2 id="people-title">Critical</h2>
+          <ol id="people" class="people"></ol>
+          <h2 id="others-title">Everyone else at risk</h2>
+          <ol id="others" class="people"></ol>
+        </aside>
+      </div>
+    </section>
+
+    <p class="fineprint"><strong>This is a research demo, not a rescue system. In a real emergency, call your local emergency services.</strong>
+      The models miss people and can be wrong, and the danger rules have not been checked by emergency responders.
+      <a href="https://github.com/HassanCodes-max/dronesight">How it works</a></p>
+  </main>
+  <script type="module" src="rescue.js"></script>
+</body>
+</html>

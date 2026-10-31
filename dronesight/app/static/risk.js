@@ -16,11 +16,9 @@ const DEEP_METRES = 3;
 const NEAR_POINTS = { fire: [[5, 40], [20, 25], [50, 10]], "flood water": [[5, 25], [20, 10]] };
 const ALONE_POINTS = 15;
 const STILL_POINTS = 15;
+const LYING_POINTS = 50;  // lying down and not moving, wherever they are, may mean someone is hurt
 const LEVELS = [[65, "CRITICAL"], [30, "HIGH"], [10, "WATCH"], [0, "CLEAR"]];
 const COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
-
-// Nothing here can see the ground, so a promise about speed or safety would be false reassurance.
-const PROMISE = /\b(quick|quickly|fast|easy|easily|safely|soon|should be able|can reach|will reach|is safe|are safe|route is|clear path|no obstacles?)\b/i;
 
 const radians = (degrees) => (degrees * Math.PI) / 180;
 
@@ -43,11 +41,15 @@ export function assess(person) {
       reasons.push(`about ${Math.round(person.distanceM)} m from ${person.nearestHazard}`);
     }
   }
+  if (person.lying && person.still) {
+    score += LYING_POINTS;
+    reasons.push("lying down and not moving");
+  }
   if (score && person.alone) {
     score += ALONE_POINTS;
     reasons.push("alone");
   }
-  if (score && person.still) {
+  if (score && person.still && !person.lying) {
     score += STILL_POINTS;
     reasons.push("not moving");
   }
@@ -78,8 +80,6 @@ export function locate(x, y, drone, aspect) {
   };
 }
 
-export const withoutPromises = (text) => text.split(/(?<=[.!?])\s+/).filter((sentence) => !PROMISE.test(sentence)).join(" ");
-
 export function between(from, to) {
   const north = (to.latitude - from.latitude) * METRES_PER_DEGREE;
   const east = (to.longitude - from.longitude) * METRES_PER_DEGREE * Math.cos(radians(from.latitude));
@@ -94,6 +94,26 @@ export function exitDirection({ dx, dy }, heading) {
   const across = Math.abs(dx) * 2 < Math.abs(dy) ? "" : dx > 0 ? "right" : "left";
   const down = Math.abs(dy) * 2 < Math.abs(dx) ? "" : dy > 0 ? "bottom" : "top";
   return `towards the ${[down, across].filter(Boolean).join(" ")} of the picture`;
+}
+
+const LOCATION_MARKERS = ["©xyz", "location.ISO6709"];
+const EDGE_BYTES = 8 * 1024 * 1024;  // the tag sits near one end of the file
+const ISO_6709 = /([+-]\d{1,2}\.\d{2,})([+-]\d{1,3}\.\d{2,})/;
+
+// Phones and some drones store where a video was filmed in its file, as text after one of these tags.
+export async function readVideoLocation(file) {
+  const parts = [file.slice(0, EDGE_BYTES), file.slice(Math.max(0, file.size - EDGE_BYTES))];
+  for (const part of parts) {
+    const text = new TextDecoder("latin1").decode(await part.arrayBuffer());
+    for (const marker of LOCATION_MARKERS) {
+      const start = text.indexOf(marker);
+      const found = start < 0 ? null : text.slice(start, start + 200).match(ISO_6709);
+      if (found && Math.abs(Number(found[1])) <= 90 && Math.abs(Number(found[2])) <= 180) {
+        return { latitude: Number(found[1]), longitude: Number(found[2]) };
+      }
+    }
+  }
+  return null;
 }
 
 // DJI flight logs differ by model, so each field is matched on its own. Times come from the subtitle's start.

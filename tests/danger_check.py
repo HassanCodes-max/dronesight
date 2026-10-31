@@ -1,6 +1,6 @@
-"""Check the danger analysis on a real page: rules, map math, flight logs, then a whole video.
+"""Check the whole page as a visitor uses it: rules, map math, flight logs, then a whole video.
 
-    python tests/danger_check.py https://your-site video flood outputs/danger_check
+    python tests/danger_check.py https://your-site video outputs/danger_check
 
 Mistakes here would send a team to the wrong person or the wrong place, so the rules and the map math
 are checked on cases worked out by hand. Not part of pytest because it needs a browser and a video.
@@ -18,7 +18,7 @@ import websockets
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from browser_check import BROWSERS, PORT, Page, report  # noqa: E402
+from browser_check import BROWSERS, HAS_BOXES, PORT, Page, report  # noqa: E402
 
 LIMIT_SECONDS = 420
 RULES = """(async () => {
@@ -35,11 +35,13 @@ RULES = """(async () => {
   out['smoke alone is only a watch'] = level({ hazard: 'smoke', depthM: 30 }) === 'WATCH';
   out['smoke beside flames counts both'] = assess(person({ hazard: 'smoke', distanceM: 4, nearestHazard: 'fire' })).reasons.join() === 'in smoke,about 4 m from fire';
   out['alone and still are explained'] = assess(person({ hazard: 'flood water', depthM: 1, alone: true, still: true })).reasons.join() === 'in flood water,alone,not moving';
+  out['lying still is critical if alone'] = level({ lying: true, still: true, alone: true }) === 'CRITICAL' && level({ lying: true, still: true }) === 'HIGH';
+  out['lying but moving adds nothing'] = level({ lying: true }) === 'CLEAR';
   out['far from danger is clear even if alone'] = level({ distanceM: 400, nearestHazard: 'fire', alone: true }) === 'CLEAR';
   return JSON.stringify(out);
 })()"""
 MAP = """(async () => {
-  const { between, exitDirection, locate, parseFlightLog, withoutPromises } = await import('./risk.js');
+  const { between, exitDirection, locate, parseFlightLog, readVideoLocation } = await import('./risk.js');
   const drone = { latitude: 33.7, longitude: 73, height: 100, heading: 0, tilt: 0, fov: 90 };
   const north = (place) => (place.latitude - 33.7) * 111320;
   const east = (place) => (place.longitude - 73) * 111320 * Math.cos(33.7 * Math.PI / 180);
@@ -61,68 +63,108 @@ MAP = """(async () => {
   const log = parseFlightLog('1\\n00:00:01,000 --> 00:00:02,000\\n[latitude: 33.123456] [longitude: 73.654321] [rel_alt: 42.5 abs_alt: 600.1] [gb_yaw: 12.5 gb_pitch: -60]\\n\\n2\\n00:00:02,000 --> 00:00:03,000\\nGPS (33.5, 73.5, 18) H 30.0M\\n');
   out['newer flight logs are read'] = log[0].latitude === 33.123456 && log[0].height === 42.5 && log[0].heading === 12.5 && log[0].tilt === 30 && log[0].t === 1;
   out['older flight logs are read'] = log[1].latitude === 33.5 && log[1].longitude === 73.5 && log[1].height === 30;
-  const said = 'They are in water. The shortest way out is north. The team should be able to reach them quickly. Check the route yourself.';
-  out['promises of speed or safety are removed'] = withoutPromises(said) === 'They are in water. The shortest way out is north. Check the route yourself.';
-  out['safe ground can still be mentioned'] = withoutPromises('About 3 m from safe ground.') === 'About 3 m from safe ground.';
+  const tag = new TextEncoder().encode('©xyz');
+  const latin = (text) => Uint8Array.from([...text].map((c) => c.charCodeAt(0)));
+  const withTag = new File([new Uint8Array(500), latin('©xyz\u0000\u0012\u0015Ç+33.6844+073.0479/'), new Uint8Array(500)], 'a.mp4');
+  const apple = new File([new Uint8Array(100), latin('com.apple.quicktime.location.ISO6709  data  -33.8688+151.2093+058.000/')], 'b.mov');
+  const plain = new File([new Uint8Array(2000)], 'c.mp4');
+  const read = await readVideoLocation(withTag);
+  out['a location in the file is read'] = read?.latitude === 33.6844 && read?.longitude === 73.0479;
+  out['a phone video location is read'] = (await readVideoLocation(apple))?.longitude === 151.2093;
+  out['no location in the file gives none'] = (await readVideoLocation(plain)) === null;
   return JSON.stringify(out);
 })()"""
 
 
-async def run(url, video, kind, out):
+async def run(url, video, out):
     target = next(t for t in httpx.get(f"http://127.0.0.1:{PORT}/json").json() if t["type"] == "page")
     async with websockets.connect(target["webSocketDebuggerUrl"], max_size=None, ping_interval=None) as socket:
         page = Page(socket)
-        for domain in ["Page", "Runtime", "Log", "DOM"]:
+        for domain in ["Page", "Runtime", "Log", "DOM", "Network"]:
             await page.call(f"{domain}.enable")
-        await page.call("Emulation.setDeviceMetricsOverride", width=1360, height=1200, deviceScaleFactor=1, mobile=False)
+        await page.call("Emulation.setDeviceMetricsOverride", width=1360, height=1000, deviceScaleFactor=1, mobile=False)
         await page.call("Page.navigate", url=f"{url}/")
-        await page.wait("document.querySelectorAll('.clip').length > 1", 30)
-        checks = {**json.loads(await page.js(RULES)), **json.loads(await page.js(MAP))}
-        await page.js(f"document.querySelector('input[name=kind][value={kind}]').click()")
-        root = (await page.call("DOM.getDocument"))["root"]["nodeId"]
-        node = (await page.call("DOM.querySelector", nodeId=root, selector="#file"))["nodeId"]
+        await page.wait("document.getElementById('start').offsetHeight > 0", 30)
+        checks = {"there is nothing to choose first": await page.js("document.querySelectorAll('#start button, #start input[type=radio]').length === 0")}
+        await page.shot(Path(out) / "start.png")
+        checks.update(json.loads(await page.js(RULES)))
+        checks.update(json.loads(await page.js(MAP)))
+
+        async def add_video():
+            root = (await page.call("DOM.getDocument"))["root"]["nodeId"]
+            node = (await page.call("DOM.querySelector", nodeId=root, selector="#file"))["nodeId"]
+            await page.call("DOM.setFileInputFiles", nodeId=node, files=[str(Path(video).resolve())])
+
         started = time.perf_counter()
-        await page.call("DOM.setFileInputFiles", nodeId=node, files=[str(Path(video).resolve())])
-        checks["analysis finishes"] = await page.wait("document.getElementById('upload-status').textContent.startsWith('Done.')", LIMIT_SECONDS)
-        print("finished after", round(time.perf_counter() - started), "s:", await page.js("document.getElementById('risk-summary').textContent"), flush=True)
+        await add_video()
+        checks["progress shows"] = await page.wait("document.getElementById('working').offsetHeight > 0", 10)
         await asyncio.sleep(1)
-        checks["people in danger are listed"] = await page.wait("document.querySelectorAll('.risk').length > 0", 10)
-        print("first card:", await page.js("document.querySelector('.risk')?.innerText"))
-        checks["an unknown location says so"] = await page.js("document.querySelector('.risk').innerText.includes('Location unknown')")
-        checks["no map link without a location"] = await page.js("!document.querySelector('.risk a')")
-        await page.js("document.querySelector('.risk .actions button').click()")
+        await page.shot(Path(out) / "working.png")
+        checks["analysis finishes"] = await page.wait("document.getElementById('results').offsetHeight > 0", LIMIT_SECONDS)
+        print("finished after", round(time.perf_counter() - started), "s:", await page.js("document.getElementById('headline').textContent"), "|",
+              await page.js("document.getElementById('subhead').textContent"), flush=True)
+        checks["the answer comes first"] = await page.js("document.getElementById('headline').textContent.length > 5")
         await asyncio.sleep(1.5)
-        await page.shot(Path(out) / "danger_video.png")
-        await page.js("""document.getElementById('where').open = true;
-            document.getElementById('drone-lat').value = 'nonsense';
-            document.getElementById('drone-lon').value = '73';
-            document.getElementById('drone-height').value = '60';
-            document.getElementById('where-form').requestSubmit()""")
-        checks["bad numbers are refused"] = await page.js("document.getElementById('where-error').textContent !== ''")
-        await page.js("""document.getElementById('drone-lat').value = '33.6844';
-            document.getElementById('drone-lon').value = '73.0479';
-            document.getElementById('drone-height').value = '60';
-            document.getElementById('drone-heading').value = '45';
-            document.getElementById('team-lat').value = '33.6900';
-            document.getElementById('team-lon').value = '73.0500';
-            document.getElementById('where-form').requestSubmit()""")
-        await asyncio.sleep(0.5)
-        print("with location:", await page.js("document.querySelector('.risk')?.innerText"))
-        checks["coordinates appear"] = await page.js("/33\\.68\\d+, 73\\.04?\\d+/.test(document.querySelector('.risk').innerText) || /33\\.\\d+, 73\\.\\d+/.test(document.querySelector('.risk').innerText)")
-        checks["the error range is shown"] = await page.js("/within about \\d+ m/.test(document.querySelector('.risk').innerText)")
-        checks["directions link appears"] = await page.js("document.querySelector('.risk a')?.href.startsWith('https://www.google.com/maps/dir/')")
-        if "127.0.0.1" not in url:  # the worker refuses other sites
-            await page.js("[...document.querySelector('.risk .actions').querySelectorAll('button')].at(-1).click()")
-            checks["the assistant explains"] = await page.wait(
-                "(() => { const t = document.querySelector('.risk .explained').textContent; return t.length > 30 && !t.includes('Thinking'); })()", 40)
-            print("explained:", await page.js("document.querySelector('.risk .explained').textContent"))
-            checks["the explanation always gives the emergency line"] = await page.js(
-                "document.querySelector('.risk .explained').textContent.includes('call your local emergency services')")
-        await page.shot(Path(out) / "danger_located.png")
+        found = await page.js("document.querySelectorAll('.person').length")
+        if not found:  # a calm video should say so, not list anyone
+            checks["a calm video says nobody is critical"] = await page.js("document.getElementById('headline').textContent === 'Nobody critical was found'")
+            checks["no report is offered"] = await page.js("document.getElementById('report').hidden")
+            checks["boxes are drawn on the video"] = await page.js(HAS_BOXES)
+            await page.shot(Path(out) / "results.png")
+        else:
+            print("all found:", await page.js("[...document.querySelectorAll('.person-pick strong')].slice(0, 4).map((e) => e.textContent).join(' | ')"))
+            checks["the worst person is shown by itself"] = await page.wait("document.querySelector('.person[aria-current=true]') !== null", 15)
+            await asyncio.sleep(1.5)
+            checks["boxes are drawn on the video"] = await page.js(HAS_BOXES)
+            print("first person:", await page.js("document.querySelector('.person')?.innerText"))
+            await page.shot(Path(out) / "results.png")
+            critical = await page.js("document.querySelectorAll('#people .person').length")
+            wording = "(document.getElementById('report').innerText)"
+            if critical:
+                checks["a report is ready without a click"] = await page.js("!document.getElementById('report').hidden")
+                checks["it never claims officials were told"] = await page.js(f"!/sent to|has been sent to|officials have|help is coming/i.test({wording})")
+                checks["it says nothing has been sent"] = await page.js(f"/Nothing has been sent/.test({wording})")
+                checks["the WhatsApp link holds the report"] = await page.js("document.getElementById('report-send').href.startsWith('https://wa.me/?text=DroneSight')")
+            checks["a missing location says so"] = await page.js("document.querySelector('.person').innerText.includes('Location unknown')")
+            await page.js("""document.getElementById('where').open = true;
+                document.getElementById('drone-lat').value = 'nonsense';
+                document.getElementById('drone-lon').value = '73';
+                document.getElementById('drone-height').value = '60';
+                document.getElementById('where-form').requestSubmit()""")
+            checks["bad numbers are refused"] = await page.js("document.getElementById('where-error').textContent !== ''")
+            await page.js("""document.getElementById('drone-lat').value = '33.6844';
+                document.getElementById('drone-lon').value = '73.0479';
+                document.getElementById('drone-height').value = '60';
+                document.getElementById('drone-heading').value = '45';
+                document.getElementById('team-lat').value = '33.6900';
+                document.getElementById('team-lon').value = '73.0500';
+                document.getElementById('where-form').requestSubmit()""")
+            await asyncio.sleep(0.5)
+            checks["everyone listed gets coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => /33\\.\\d+, 73\\.\\d+|Location unknown/.test(e.innerText))")
+            checks["the error range is shown"] = await page.js("/within about \\d+ m/.test(document.querySelector('.person').innerText)")
+            checks["directions link appears"] = await page.js("document.querySelector('.person a')?.href.startsWith('https://www.google.com/maps/dir/')")
+            await page.shot(Path(out) / "located.png")
+
+        sent = [e["params"]["request"] for e in page.events if e.get("method") == "Network.requestWillBeSent"]
+        posts = [r for r in sent if r["method"] not in ("GET", "HEAD", "OPTIONS")]
+        print("sent from the device:", [(r["method"], r["url"][:70]) for r in posts])
+        checks["nothing was sent from the device"] = not posts
+
+        await page.js("document.getElementById('again').click()")
+        checks["another video can be checked"] = await page.wait("document.getElementById('start').offsetHeight > 0", 5)
+        before = len(page.events)
+        await add_video()
+        await page.wait("/Working on your/.test(document.getElementById('working-note').textContent)", 60)
+        again = [e["params"]["request"]["url"] for e in page.events[before:] if e.get("method") == "Network.requestWillBeSent"]
+        large = [u for u in again if u.endswith((".onnx", ".wasm")) or "xet" in u]
+        checks["a second video downloads nothing big"] = not large
+        await page.call("Emulation.setDeviceMetricsOverride", width=390, height=844, deviceScaleFactor=2, mobile=True)
+        await asyncio.sleep(1)
+        checks["mobile has no sideways scroll"] = await page.js("document.documentElement.scrollWidth <= window.innerWidth")
         return report(page, checks)
 
 
-def main(url, video, kind, out):
+def main(url, video, out):
     Path(out).mkdir(parents=True, exist_ok=True)
     binary = next(b for b in BROWSERS if Path(b).exists())
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as profile:
@@ -135,7 +177,7 @@ def main(url, video, kind, out):
                     break
                 except httpx.HTTPError:
                     asyncio.run(asyncio.sleep(0.25))
-            ok = asyncio.run(run(url.rstrip("/"), video, kind, out))
+            ok = asyncio.run(run(url.rstrip("/"), video, out))
         finally:
             browser.terminate()
             browser.wait(timeout=10)
@@ -143,4 +185,4 @@ def main(url, video, kind, out):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:5])
+    main(*sys.argv[1:4])

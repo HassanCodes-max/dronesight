@@ -1,31 +1,25 @@
-"""Build the free static edition: the sample flight and its detections, with no server.
+"""Build the free static site. Everything runs in the visitor's browser, so there is no server.
 
-    python -m dronesight.app.seed demo/flight.mp4 "Sample flight"
     python deploy/fetch_ort.py
-    python deploy/build_static.py dist [assistant-url]
+    python deploy/build_static.py dist
 
-It reads the seeded database, so the detections are the worker's real output. Visitors' own videos
-are analysed in their browser, so the model and its runtime are published too. Static hosts cannot
-send headers, so the page carries its Content Security Policy in a meta tag.
+The models and their runtime are published with the page. Static hosts cannot send headers, so the
+page carries its Content Security Policy in a meta tag.
 """
-import json
 import shutil
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from deploy.build_worker import topics  # noqa: E402
-from dronesight.app import db  # noqa: E402
 
 STATIC = ROOT / "dronesight/app/static"
+PAGE_FILES = ["rescue.js", "local.js", "tracker.js", "hazards.js", "risk.js", "style.css", "rescue.css", "favicon.svg"]
 BROWSER_MODELS = [ROOT / "models" / name for name in ("person.onnx", "water.onnx", "fire.onnx")]
 # Hugging Face redirects large files to its CDN, so they need that one extra source. Blobs are a
-# visitor's own video, and the runtime needs to compile WebAssembly.
+# visitor's own video, and the runtime needs to compile WebAssembly. Nothing here can send it anywhere else.
 CSP = ("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: https://*.hf.co; "
        "media-src 'self' blob: https://*.hf.co; "
-       "connect-src 'self' https://*.hf.co {assistant}; object-src 'none'; base-uri 'none'; form-action 'none'")
+       "connect-src 'self' https://*.hf.co; object-src 'none'; base-uri 'none'; form-action 'none'")
 CARD = """---
 title: DroneSight
 emoji: 🛰️
@@ -33,40 +27,32 @@ colorFrom: yellow
 colorTo: gray
 sdk: static
 pinned: false
-short_description: Find and follow every person in your drone video
+short_description: See who needs help first in a drone video
 ---
 
-Add a drone video and every person in it is followed, on your own device.
+Add a drone video and see who needs help first, on your own device.
 """
 
 
-def main(out, assistant=""):
+def main(out):
     out = Path(out)
     shutil.rmtree(out, ignore_errors=True)
-    shutil.copytree(STATIC, out)
-    shutil.copy(ROOT / "demo/flight.mp4", out / "flight.mp4")
+    out.mkdir(parents=True)
+    for name in PAGE_FILES:
+        shutil.copy(STATIC / name, out / name)
     for model in BROWSER_MODELS:
         shutil.copy(model, out / model.name)
     shutil.copytree(ROOT / "vendor/ort", out / "ort")
-    with db.transaction() as conn:
-        video = conn.execute("SELECT * FROM videos WHERE id = 'Sample flight' AND status = 'ready'").fetchone()
-        if video is None:
-            sys.exit("Seed the sample flight first.")
-        (out / "index.json").write_text(json.dumps(db.video_index(conn, video), separators=(",", ":")))
-    (out / "facts.json").write_text(json.dumps(topics(), separators=(",", ":")))
-    meta = f'  <meta http-equiv="Content-Security-Policy" content="{CSP.format(assistant=assistant)}">\n'
-    html = (out / "index.html").read_text(encoding="utf-8")
-    html = html.replace('data-edition="server"', f'data-edition="static" data-ask-url="{assistant}"')
+    meta = f'  <meta http-equiv="Content-Security-Policy" content="{CSP}">\n'
+    html = (STATIC / "rescue.html").read_text(encoding="utf-8")
+    html = html.replace(' data-edition="server"', "")
     html = html.replace('  <meta name="viewport"', meta + '  <meta name="viewport"', 1)
     (out / "index.html").write_text(html, encoding="utf-8", newline="\n")
-    shutil.rmtree(out / "mission")
-    for name in ["mission.html", "mission.js", "mission.css"]:
-        (out / name).unlink()
     (out / "README.md").write_text(CARD, encoding="utf-8", newline="\n")
     print(f"{sum(f.stat().st_size for f in out.rglob('*') if f.is_file()) / 1e6:.1f} MB in {out}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (2, 3):
+    if len(sys.argv) != 2:
         sys.exit(__doc__)
     main(*sys.argv[1:])

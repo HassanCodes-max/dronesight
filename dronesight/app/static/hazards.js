@@ -13,10 +13,11 @@ const PERSON_METRES = 1.7;  // a person's height is the only ruler in an ordinar
 const NEIGHBOUR_HEIGHTS = 6;
 const STILL_SECONDS = 4;
 const STILL_HEIGHTS = 0.6;
-const DIAGONAL = Math.SQRT2;
+const LYING_RATIO = 1.2;  // wider than tall, which a standing person's box never is from the side
+const MIN_HAZARD_SHARE = 0.005;  // specks are usually false alarms, so they are ignored
 
 export const HAZARD_SECONDS = 2;
-export const HAZARD_MODELS = { flood: WATER.model, fire: FIRE.model };
+export const HAZARD_MODELS = [WATER.model, FIRE.model];
 
 function sized(width, height) {
   const canvas = document.createElement("canvas");
@@ -104,7 +105,11 @@ async function fireFrame(ort, session, video) {
   return { width: maskWidth, height: maskHeight, mask, smoke: boxes.smoke };
 }
 
-export const hazardFrame = (kind, ort, session, video) => (kind === "flood" ? floodFrame : fireFrame)(ort, session, video);
+export async function hazardFrame(ort, sessions, video, t) {
+  const flood = await floodFrame(ort, sessions[0], video);
+  const fire = await fireFrame(ort, sessions[1], video);
+  return { t, flood: { ...flood, t }, fire: { ...fire, t } };
+}
 
 // For every cell, how far the nearest seed is and which one it is, in two sweeps.
 function nearestSeed(seeded, width, height) {
@@ -152,6 +157,11 @@ function nearestSeed(seeded, width, height) {
   return { distance, from };
 }
 
+function isLying(track) {
+  const shapes = track.boxes.map(([x1, y1, x2, y2]) => (x2 - x1) / Math.max(y2 - y1, 1e-6)).sort((a, b) => a - b);
+  return shapes[Math.floor(shapes.length / 2)] >= LYING_RATIO;
+}
+
 function isStill(track) {
   const span = track.times.at(-1) - track.times[0];
   if (span < STILL_SECONDS) return false;
@@ -183,17 +193,29 @@ function personAt(track, box, frame, fields, name, everyone) {
     distanceM: inside || !Number.isFinite(fields.danger.distance[cell]) ? null : fields.danger.distance[cell] * metres,
     nearestHazard: inside ? null : name,
     exit: way >= 0 ? { dx: (way % width) - (cell % width), dy: Math.floor(way / width) - Math.floor(cell / width) } : null,
+    way: way >= 0 ? [((way % width) + 0.5) / width, (Math.floor(way / width) + 0.5) / height] : null,
     alone: !company,
     still: isStill(track),
+    lying: isLying(track),
   };
 }
 
+const hasHazard = ({ mask }) => mask.reduce((sum, cell) => sum + cell, 0) / mask.length >= MIN_HAZARD_SHARE;
+
+export const hazardSeen = (frames, kind) => frames.some((frame) => hasHazard(frame[kind]));
+
 // Each person's worst moment in the video decides their place in the ranking.
-export function judge(tracks, frames, kind) {
-  const name = kind === "flood" ? "flood water" : "fire";
+export function judge(tracks, frames) {
   const worst = new Map();
+  for (const [kind, name] of [["flood", "flood water"], ["fire", "fire"]]) judgeHazard(tracks, frames.map((frame) => frame[kind]), name, worst);
+  return [...worst.values()].sort((a, b) => b.score - a.score || b.depthM - a.depthM || a.id - b.id);
+}
+
+function judgeHazard(tracks, frames, name, worst) {
   for (const frame of frames) {
-    const { width, height, mask, t } = frame;
+    const { width, height, t } = frame;
+    const mask = hasHazard(frame) ? frame.mask : new Uint8Array(frame.mask.length);
+    const usable = { ...frame, mask };
     const fields = {
       safe: nearestSeed((i) => !mask[i], width, height),
       danger: nearestSeed((i) => mask[i], width, height),
@@ -202,19 +224,19 @@ export function judge(tracks, frames, kind) {
     const everyone = seen.map(({ box }) => [(box[0] + box[2]) / 2, box[3]]);
     const judged = rank(seen.map(({ track, box }, i) => {
       everyone[i] = [(box[0] + box[2]) / 2, box[3]];
-      return { ...personAt(track, box, frame, fields, name, everyone.filter((_, other) => other !== i)), t };
+      return { ...personAt(track, box, usable, fields, name, everyone.filter((_, other) => other !== i)), t };
     }));
     for (const person of judged) {
       const known = worst.get(person.id);
       if (!known || person.score > known.score) worst.set(person.id, person);
     }
   }
-  return [...worst.values()].sort((a, b) => b.score - a.score || b.depthM - a.depthM || a.id - b.id);
 }
 
 // Hazards as a see-through picture for the video overlay.
 export function maskPicture(frame, kind) {
   const { width, height, mask } = frame;
+  if (!hasHazard(frame)) return null;
   const ctx = sized(width, height);
   const image = ctx.createImageData(width, height);
   const colour = kind === "flood" ? [64, 156, 255, 90] : [255, 106, 40, 120];

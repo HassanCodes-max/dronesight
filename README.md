@@ -1,14 +1,14 @@
 # DroneSight
 
-Add a drone video of a flood or fire. Every person is followed, ranked by danger with the reasons shown, and placed on the map when the drone's position is known. All of it runs on your own device.
+Add a drone video and see who needs help first. It checks for water and fire by itself, shows the critical people first with the reason and the quickest way out, and prepares a report you can send on WhatsApp. All of it runs on your own device.
 
 After a disaster, teams come back with hours of drone video and someone has to watch all of it and decide who needs help first. DroneSight does that first pass. The video is analysed in your browser and is never uploaded.
 
 **Live demo:** https://hassanali0987654-dronesight.static.hf.space
 
-**This is a research demo, not a rescue system.** The models miss people, the risk rules have not been validated by emergency responders, and locations are estimates. In a real emergency, call your local emergency services.
+**This is a research demo, not a rescue system.** The models miss people, the danger rules have not been checked by emergency responders, and locations are estimates. Nothing is sent to officials unless you send it yourself. In a real emergency, call your local emergency services.
 
-**Status:** live on a free static site with no server. An earlier simulated mission was retired from the site, and its code remains in the repository. Telegram alerts are written but switched off.
+**Status:** live on a free static site with no server. It has not yet been tried on real flood or fire footage: danger ranking was tested on clips panned across disaster photos, and false alarms were checked on one real, calm video.
 
 ## How it works
 
@@ -19,24 +19,28 @@ YOLO11s at 1280: finds people, on the graphics card through WebGPU or the proces
    |
 tracker.js: removes the drone's motion and follows each person
    |
-U-Net (flood) or YOLO11s plus flame colour (fire): finds the hazard every 2 seconds
+U-Net for water and YOLO11s plus flame colour for fire, every 2 seconds, on every video
    |
 risk.js: ranks each person at their worst moment, with reasons
    |
-Drone position or DJI .SRT log: turns picture positions into latitude and longitude
+The video file's own location tag, a DJI .SRT log, or the drone's details: turn people into coordinates
    |
-Cloudflare Worker: explains one finding in plain language, from measurements only
+A report you can copy or open in WhatsApp
 ```
 
 **Risk ranking** uses fixed rules in `dronesight/app/static/risk.js`, so every decision can be explained. Being in fire or water counts most, then how far the person is from safety, then being near a hazard, being alone and not moving. Someone 3 m or more into water is critical, because they cannot just step out. Dry land beside water is a watch, while dry land beside flames is high, because fire spreads and burns at a distance. Smoke alone is only a watch, because its boxes are coarse. The rules are written by hand, not learned from responders' decisions.
 
 **Distances** use each person's own height as the ruler, because an ordinary video has no scale. They are rough, and worse when the camera looks straight down, where people appear short.
 
-**Location** needs the drone's position, height, heading and camera tilt, typed in or read from a DJI `.SRT` flight log. An ordinary video has no GPS, so without these the page says the location is unknown instead of guessing. The maths assumes flat ground, and each result shows an error range that grows with tilt. Typed positions assume the drone stayed there. The flight log parser was tested on written examples of the two DJI formats, not on a real log.
+**Lying still** is flagged from the track: a box wider than tall that stays put for 4 seconds. It is the only sign of someone hurt away from water or fire, and it will miss people and raise false alarms. No model here recognises cliffs or falls.
 
-**The shortcut** is the straight line to the nearest safe ground, measured on the hazard mask, plus a Google Maps directions link from the team to the person. Neither knows whether a route is passable, and the assistant is told never to say a route is safe.
+**Location** has three levels. Many phone videos carry a location tag, which the page reads from the file, and that gives the general area only. An exact spot for each person needs the drone's position, height, heading and camera tilt, typed in or read from a DJI `.SRT` log. A normal video has none of this, so the page says the location is unknown instead of guessing. The maths assumes flat ground, and each result shows an error range that grows with tilt but assumes the entered details are right. The file tag and flight log readers were tested on written examples, not on real files.
 
-**The assistant** gets measurements, not text. The worker checks every field against fixed values and ranges and writes the findings itself, so nothing a visitor types reaches the model.
+**The shortcut** is the straight line to the nearest safe ground, measured on the hazard mask, plus a Google Maps directions link when your team's position is given. Neither knows whether a route is passable.
+
+**Reporting** stays with a person. The page writes the report and opens WhatsApp, and it never says officials were told, because someone in an emergency could stop trying if they believed help was coming. Telegram alerts are written in the worker but switched off.
+
+**A language model was removed.** A small one wrote plain-language explanations, but it invented times, contradicted itself and promised a team would arrive quickly, so the page now writes every message from the measurements. `worker/` remains for the older question box and is not used by the live page.
 
 The recorded flight page has its own pipeline:
 
@@ -242,6 +246,7 @@ The source code is under the MIT licence. It does not cover images, video or dat
 
 ## Update log
 
+- Rebuilt the page around one job: add a video and see who needs help first. Water and fire are now checked on every video, so there is nothing to choose, and the language model was replaced by messages written from the measurements. On a real, calm park video with about 186 people it raised no false alarms.
 - Added danger ranking, map locations and plain-language explanations on visitors' own videos, all in the browser.
 - The product moved from the simulated mission to visitors' own videos. Tracking was added in the browser, and the browser model moved back to the full 1280 version after a real video showed the 960 version missing most people.
 - Added analysis of a visitor's own video in their browser, with no server. Missions moved to the largest source photos, up to 3600 pixels wide against as little as 230, because many scenes were blurry when shown large. The assistant now reads its facts from the site, so new data needs no worker update.
