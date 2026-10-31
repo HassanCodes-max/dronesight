@@ -4,7 +4,7 @@ Ask your drone footage questions in plain English.
 
 Drone teams return with hours of video and scrub through it by hand to find what matters, for example in flood response, search and rescue, or site inspection. DroneSight finds the people in a flight, indexes every detection by time, and takes you straight to the moment you asked about.
 
-**Status:** working web app with a real trained detector, tested locally. It is not deployed yet, and Experiment 2 is still training. Search currently understands questions about people, by count and time. Map pins, LLM questions and before and after comparison are planned, not built.
+**Status:** working web app with a real trained detector, tested locally. It is not deployed yet. Search currently understands questions about people, by count and time. Map pins, LLM questions and before and after comparison are planned, not built.
 
 ## How it works
 
@@ -18,7 +18,7 @@ SQLite: users, videos, every detection with its time and track
 Worker process: decodes video, runs YOLO11s through ONNX Runtime on CPU, tracks people
 ```
 
-The model runs through ONNX, so the web server needs no PyTorch or GPU. It took about 285 ms per frame on a Kaggle CPU.
+The model runs through ONNX, so the web server needs no PyTorch or GPU. It takes about 300 to 400 ms per frame on a Kaggle CPU.
 
 Search is deterministic: a question becomes a filter on stored detections. It costs nothing per query, and text can never become instructions, so there is no prompt injection risk until an LLM is added.
 
@@ -64,16 +64,16 @@ huggingface-cli login
 python deploy/push_space.py <your-hf-username>/dronesight
 ```
 
-The Dockerfile has not been built yet, because the development machine has no Docker. Sample footage comes from VisDrone, so check its terms before publishing.
+The Dockerfile has not been built yet, because the development machine has no Docker. Sample footage comes from VisDrone. Mirrors of that dataset state different licences, so check the official terms before publishing.
 
 ## Experiments
 
-Training runs on Kaggle GPUs. Models are chosen on the validation split, and only the winner is scored once on the test split.
+Training runs on Kaggle GPUs. Models are chosen on validation data, never on test scores.
 
 | # | Dataset | Question | Status |
 |---|---|---|---|
 | 1 | VisDrone | Which of YOLO11n at 640, YOLO11n at 960 or YOLO11s at 960 is best? | Done: YOLO11s at 960 |
-| 2 | VisDrone, HERIDAL, C2A | Does mixing datasets help find people in footage from a dataset the model never saw? | Full run on Kaggle |
+| 2 | VisDrone, HERIDAL, C2A | Does mixing datasets help find people in footage from a dataset the model never saw? | Done: no measurable gain |
 
 ### Experiment 1 results (10 classes, 30 epochs)
 
@@ -85,8 +85,40 @@ Training runs on Kaggle GPUs. Models are chosen on the validation split, and onl
 
 The winner scored mAP50-95 0.231 and mAP50 0.397 on test-dev, which was scored once. People are the weak spot: test mAP50-95 is 0.154 for pedestrian and 0.072 for people, against 0.506 for car.
 
+### Experiment 2 results (one `person` class, YOLO11s at 960, 15 epochs, one seed)
+
+Test mAP50-95. Each dataset was split so near-identical images cannot land on both sides: HERIDAL by location and C2A by base scene.
+
+| Trained on | VisDrone | HERIDAL | C2A |
+|---|---|---|---|
+| VisDrone | 0.167 | 0.232 (unseen) | 0.053 (unseen) |
+| VisDrone + C2A | 0.146 | 0.234 (unseen) | 0.617 |
+| VisDrone + HERIDAL | 0.163 | 0.312 | 0.052 (unseen) |
+| HERIDAL + C2A | 0.059 (unseen) | 0.196 | 0.623 |
+| All three | 0.146 | 0.323 | 0.613 |
+
+Mixing did not help on unseen data: adding a second dataset moved HERIDAL from 0.232 to 0.234 and C2A from 0.053 to 0.052. A model that never saw VisDrone scores 0.059 on it, so scores on familiar data say little about a new customer's footage.
+
+C2A is synthetic: [its authors](https://arxiv.org/abs/2408.04922) paste cut-out people onto disaster scenes. Its high scores are not evidence about real footage. It also dominated training, with 252,234 labelled people against 106,396 for VisDrone and 848 for HERIDAL, and both VisDrone + C2A models lost about 0.02 on VisDrone. It made up about 80% of the people in mixed validation sets, so it also largely decided each model's best epoch.
+
+Every run was scored on all three test sets because that comparison was the question, so test results were seen before the site model was picked. To keep the pick independent, the rule was fixed first: the highest mean mAP50-95 on VisDrone and HERIDAL validation images, excluding C2A.
+
+### Site model
+
+Precision and recall are at confidence 0.25, the threshold the site uses, with a box counted correct at IoU 0.5. The scoring code matched Ultralytics on a known case: 0.164 against 0.163.
+
+| Model | VisDrone mAP50-95 | VisDrone recall | VisDrone precision | HERIDAL mAP50-95 | HERIDAL recall | HERIDAL precision | Mean mAP50-95 |
+|---|---|---|---|---|---|---|---|
+| Experiment 1 winner | 0.259 | 0.498 | 0.726 | 0.080 | 0.085 | 0.641 | 0.169 |
+| VisDrone | 0.301 | 0.629 | 0.664 | 0.102 | 0.201 | 0.683 | 0.201 |
+| VisDrone + HERIDAL | 0.296 | 0.601 | 0.688 | 0.142 | 0.301 | 0.592 | 0.219 |
+| **All three (shipped)** | 0.266 | 0.542 | 0.685 | 0.206 | 0.585 | 0.536 | 0.236 |
+
+The shipped model finds far more people in search-and-rescue footage, 58.5% against 8.5% on HERIDAL, at the cost of more false alarms. It is not the best on VisDrone, and the HERIDAL validation set is small: 482 people in three locations. VisDrone validation also runs much easier than test-dev.
+
 ## Update log
 
+- Experiment 2 finished: mixing datasets gave no measurable gain on unseen footage. The site now ships the model trained on all three, chosen on validation data, and all tests pass on it.
 - Web app, attack tests, ONNX export and deployment script added. The first site model is the Experiment 1 winner, keeping only its two person classes.
 - Experiment 1 finished, YOLO11s at 960 won. Experiment 2 added: HERIDAL is re-split by location and C2A by base scene to stop near-identical images leaking across splits.
 - Experiment 1 script and Kaggle config added. Training moved to Kaggle.
