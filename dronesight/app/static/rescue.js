@@ -1,4 +1,4 @@
-// The whole page: add a video, see who needs help first and where.
+// The whole page: add a video, see who needs help and where. Red boxes are numbered, the rest are black.
 // All text from the file or the visitor goes through textContent, never innerHTML.
 import { analyse } from "./local.js";
 import { exitDirection, locate, parseFlightLog, readVideoLocation } from "./risk.js";
@@ -6,19 +6,19 @@ import { boxAt } from "./tracker.js";
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_FOV = 84;  // most consumer drone cameras
-const MAX_LISTED = 60;
 const MAX_IN_REPORT = 10;  // a WhatsApp link has to stay short
 const WAY_SECONDS = 1.5;  // the arrow stays near the moment it was measured, because the drone moves on
-const COLOURS = { CRITICAL: "#ff5a4f", HIGH: "#ff9f40", WATCH: "#b3bec9", CLEAR: "#b3bec9" };
+const RED = "#ff2d20";
 const WAY_COLOUR = "#4dffa6";
-const LABEL_MIN_BOX = 16;
+const NUMBER_HEIGHT = 18;
 const LOCATION_TIMEOUT_MS = 15000;
-const NOT_SENT = "Nothing has been sent. Officials only get this report if you send it yourself.";
+// Someone in a real emergency could stop trying if a page said help was coming, so this never says so.
+const NOT_TOLD = "A live system would share each numbered person's location with officials and send help. This demo is not connected to officials, so nobody has been told and no help is on the way. Call your local emergency services.";
 
 const player = $("player");
 let videoUrl = null;
 let index = null;
-let listed = [];
+let listed = [];  // only the people who need help, numbered
 let chosen = null;
 let drone = null;
 let team = null;
@@ -28,6 +28,7 @@ let area = null;  // a rough place for the whole video: from its file or the vis
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const coordinates = ({ latitude, longitude }) => `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+const capital = (text) => text[0].toUpperCase() + text.slice(1);
 
 function show(section) {
   for (const id of ["start", "working", "results"]) $(id).hidden = id !== section;
@@ -48,8 +49,7 @@ function whereIs(person) {
 function placeText(person) {
   const place = whereIs(person);
   if (place) return `Location: ${coordinates(place)}, an estimate, within about ${place.errorM} m.`;
-  if (area) return `Area only: ${coordinates(area)}, ${area.source}.`;
-  return "Location unknown.";
+  return area ? `Area only: ${coordinates(area)}, ${area.source}.` : null;
 }
 
 const mapsLink = ({ latitude, longitude }) => (team
@@ -62,35 +62,32 @@ function wayText(person) {
 }
 
 function reportText() {
-  const critical = listed.filter((person) => person.level === "CRITICAL");
   const lines = [`DroneSight report from a drone video. Found by software and not checked by a person.`,
-    `${count(critical.length, "person needs", "people need")} help first.`];
-  for (const person of critical.slice(0, MAX_IN_REPORT)) {
+    `${count(listed.length, "person needs", "people need")} help.`];
+  for (const person of listed.slice(0, MAX_IN_REPORT)) {
     const place = whereIs(person) ?? area;
-    lines.push(`${person.place}. ${person.reasons.join(", ")}. ${place ? `Location ${coordinates(place)}` : "Location unknown"}. Seen at ${clock(person.t)} in the video.`);
+    lines.push(`${person.place}. ${capital(person.reasons.join(", "))}. ${place ? `Location ${coordinates(place)}` : "Location unknown"}. Seen at ${clock(person.t)} in the video.`);
   }
-  if (critical.length > MAX_IN_REPORT) lines.push(`And ${critical.length - MAX_IN_REPORT} more.`);
+  if (listed.length > MAX_IN_REPORT) lines.push(`And ${listed.length - MAX_IN_REPORT} more.`);
   return lines.join("\n");
 }
 
 function renderReport() {
-  const critical = listed.some((person) => person.level === "CRITICAL");
-  $("report").hidden = !critical;
-  if (critical) $("report-send").href = `https://wa.me/?text=${encodeURIComponent(reportText())}`;
+  $("report").hidden = !listed.length;
+  if (listed.length) $("report-send").href = `https://wa.me/?text=${encodeURIComponent(reportText())}`;
 }
 
 function renderLocationNote() {
-  const known = Boolean(drone || flightLog.length);
-  $("location-note").hidden = known;
+  $("location-note").hidden = Boolean(drone || flightLog.length);
   $("location-text").textContent = area
     ? `Only the general area is known: ${coordinates(area)}, ${area.source}. Each person's own spot needs the drone's height and direction.`
-    : "This video has no location in it, because a normal video has no GPS.";
+    : "No location is known yet, because a normal video has no GPS in it.";
   $("use-my-location").hidden = area !== null;
 }
 
 function card(person) {
   const item = document.createElement("li");
-  item.className = `person ${person.level}`;
+  item.className = "person";
   item.setAttribute("aria-current", String(person === chosen));
   const pick = document.createElement("button");
   pick.className = "person-pick";
@@ -98,10 +95,11 @@ function card(person) {
   const number = document.createElement("span");
   number.className = "place";
   number.textContent = person.place;
+  const [main, ...more] = person.reasons;
   const title = document.createElement("strong");
-  title.textContent = `${person.level === "CRITICAL" ? "Critical" : person.level === "HIGH" ? "At risk" : "Watch"}, at ${clock(person.t)}`;
+  title.textContent = capital(main);
   const why = document.createElement("span");
-  why.textContent = person.reasons.join(", ");
+  why.textContent = `${more.length ? `${capital(more.join(", "))}. ` : ""}Seen at ${clock(person.t)}.`;
   pick.append(number, title, why);
   pick.addEventListener("click", () => choose(person));
   const details = document.createElement("div");
@@ -112,9 +110,12 @@ function card(person) {
     line.textContent = way;
     details.append(line);
   }
-  const location = document.createElement("p");
-  location.textContent = placeText(person);
-  details.append(location);
+  const location = placeText(person);
+  if (location) {
+    const line = document.createElement("p");
+    line.textContent = location;
+    details.append(line);
+  }
   const place = whereIs(person) ?? area;
   if (place) {
     const link = document.createElement("a");
@@ -131,12 +132,9 @@ function card(person) {
 }
 
 function renderPeople() {
-  const critical = listed.filter((person) => person.level === "CRITICAL");
-  const others = listed.filter((person) => person.level !== "CRITICAL");
-  $("people").replaceChildren(...critical.map(card));
-  $("others").replaceChildren(...others.map(card));
-  $("people-title").hidden = !critical.length;
-  $("others-title").hidden = !others.length;
+  $("people").replaceChildren(...listed.map(card));
+  $("panel").hidden = !listed.length;
+  $("result-grid").classList.toggle("calm", !listed.length);
 }
 
 function refresh() {
@@ -186,6 +184,29 @@ function drawWay(ctx, person, { left, top, width, height }) {
   ctx.fill();
 }
 
+// Black has a pale edge, or it would vanish on dark ground.
+function drawOrdinary(ctx, x, y, w, h) {
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, w, h);
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, w, h);
+}
+
+function drawNumbered(ctx, x, y, w, h, person, { left, top }) {
+  ctx.strokeStyle = RED;
+  ctx.lineWidth = person === chosen ? 4 : 2.5;
+  ctx.strokeRect(x, y, w, h);
+  const text = String(person.place);
+  const width = ctx.measureText(text).width + 10;
+  const [labelX, labelY] = [Math.max(left, x), Math.max(top, y - NUMBER_HEIGHT)];
+  ctx.fillStyle = RED;
+  ctx.fillRect(labelX, labelY, width, NUMBER_HEIGHT);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(text, labelX + 5, labelY + 14);
+}
+
 function draw() {
   $("time").textContent = `${clock(player.currentTime)} / ${clock(index?.duration ?? 0)}`;
   if (document.activeElement !== $("seek")) $("seek").value = player.currentTime;
@@ -195,26 +216,16 @@ function draw() {
   for (const mask of index.masks) {
     if (Math.abs(mask.t - player.currentTime) <= 1) ctx.drawImage(mask.picture, left, top, width, height);
   }
-  const byTrack = new Map(index.people.map((person) => [person.id, person]));
-  ctx.font = "700 13px system-ui, sans-serif";
-  for (const track of index.tracks) {
-    const box = boxAt(track, player.currentTime);
-    if (!box) continue;
-    const person = byTrack.get(track.id);
-    const [x, y, w, h] = [left + box[0] * width, top + box[1] * height, (box[2] - box[0]) * width, (box[3] - box[1]) * height];
-    const picked = person && person === chosen;
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
-    ctx.lineWidth = picked ? 6 : 3;
-    ctx.strokeRect(x, y, w, h);
-    ctx.strokeStyle = COLOURS[person?.level] ?? COLOURS.CLEAR;
-    ctx.lineWidth = picked ? 3.5 : 1.5;
-    ctx.strokeRect(x, y, w, h);
-    if (person?.place && (picked || h >= LABEL_MIN_BOX)) {
-      ctx.fillStyle = COLOURS[person.level];
-      ctx.fillText(person.place, x, y - 3);
-    }
-  }
   if (chosen?.way && Math.abs(player.currentTime - chosen.t) <= WAY_SECONDS) drawWay(ctx, chosen, view);
+  const numbered = new Map(listed.map((person) => [person.id, person]));
+  const seen = index.tracks.map((track) => ({ person: numbered.get(track.id), box: boxAt(track, player.currentTime) })).filter(({ box }) => box);
+  seen.sort((a, b) => Boolean(a.person) - Boolean(b.person));  // red stays on top
+  ctx.font = "700 14px system-ui, sans-serif";
+  for (const { person, box } of seen) {
+    const [x, y, w, h] = [left + box[0] * width, top + box[1] * height, (box[2] - box[0]) * width, (box[3] - box[1]) * height];
+    if (person) drawNumbered(ctx, x, y, w, h, person, view);
+    else drawOrdinary(ctx, x, y, w, h);
+  }
 }
 
 function playbackLoop() {
@@ -233,16 +244,14 @@ function hazardsSeen() {
 function showResults(result) {
   videoUrl = result.url;
   ({ index } = result);
-  const inOrder = index.people.filter((person) => person.level !== "CLEAR");
-  listed = inOrder.slice(0, MAX_LISTED).map((person, i) => Object.assign(person, { place: i + 1 }));
+  listed = index.people.filter((person) => person.critical).map((person, i) => Object.assign(person, { place: i + 1 }));
   chosen = null;
-  const critical = listed.filter((person) => person.level === "CRITICAL").length;
   const seen = count(index.tracks.length, "person", "people");
-  $("headline").textContent = critical ? `${count(critical, "person needs", "people need")} help first` : "Nobody critical was found";
-  $("subhead").textContent = critical
-    ? `Out of about ${seen} in the video. ${hazardsSeen()}`
-    : `About ${seen} in the video. ${hazardsSeen()} The software can miss people, so this does not prove everyone is safe.`;
-  $("report-note").textContent = NOT_SENT;
+  $("headline").textContent = listed.length ? `${count(listed.length, "person needs", "people need")} help` : "Nobody in danger was found";
+  $("subhead").textContent = listed.length
+    ? `Out of about ${seen} in the video.`
+    : `About ${seen} in the video. ${hazardsSeen()} The software can miss people, and it cannot recognise fights or attacks.`;
+  $("report-note").textContent = NOT_TOLD;
   refresh();
   show("results");
   player.src = videoUrl;
@@ -311,7 +320,7 @@ $("report-send").addEventListener("click", () => {
 });
 $("report-copy").addEventListener("click", async () => {
   await navigator.clipboard.writeText(reportText()).catch(() => {});
-  $("report-note").textContent = `Report copied. ${NOT_SENT}`;
+  $("report-note").textContent = "Report copied. Nobody has been told until you send it.";
 });
 
 // Only ever asked for after a click, and the browser asks the visitor's permission too.

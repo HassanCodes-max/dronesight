@@ -17,7 +17,7 @@
   <main class="rescue">
     <section id="start" class="start">
       <h1>See who needs help first in a drone video.</h1>
-      <p class="lead">Add a video. It checks for water and fire by itself, and shows the people in most danger first.</p>
+      <p class="lead">Add a video. Anyone in water, in fire or lying still gets a red box and a number. Everyone else stays black.</p>
       <label id="drop" class="dropzone">
         <input id="file" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm">
         <strong>Add your video</strong>
@@ -47,7 +47,7 @@
 
       <div id="report" class="report" hidden>
         <div>
-          <strong>Report ready for officials</strong>
+          <strong>Alert for officials (demo)</strong>
           <p id="report-note"></p>
         </div>
         <div class="report-actions">
@@ -56,7 +56,7 @@
         </div>
       </div>
 
-      <div class="result-grid">
+      <div id="result-grid" class="result-grid">
         <div>
           <div id="stage" class="stage">
             <video id="player" playsinline muted preload="auto"></video>
@@ -68,16 +68,17 @@
             <span id="time" class="time">0:00</span>
           </div>
           <ul class="colour-key">
-            <li><span class="dot critical"></span>Critical</li>
-            <li><span class="dot high"></span>At risk</li>
-            <li><span class="dot other"></span>Others</li>
+            <li><span class="dot critical"></span>Needs help</li>
+            <li><span class="dot other"></span>Everyone else</li>
             <li><span class="dot hazard"></span>Water</li>
             <li><span class="dot flame"></span>Fire</li>
             <li><span class="dot way"></span>Quickest way out</li>
           </ul>
         </div>
 
-        <aside class="people-panel" aria-label="People found">
+        <aside id="panel" class="people-panel" aria-label="People who need help">
+          <h2>What is happening</h2>
+          <ol id="people" class="people"></ol>
           <div id="location-note" class="location-note">
             <p id="location-text"></p>
             <button id="use-my-location" class="control" type="button">Use my current location</button>
@@ -99,16 +100,12 @@
               <p id="where-error" class="error" role="alert"></p>
             </form>
           </details>
-          <h2 id="people-title">Critical</h2>
-          <ol id="people" class="people"></ol>
-          <h2 id="others-title">Everyone else at risk</h2>
-          <ol id="others" class="people"></ol>
         </aside>
       </div>
     </section>
 
     <p class="fineprint"><strong>This is a research demo, not a rescue system. In a real emergency, call your local emergency services.</strong>
-      The models miss people and can be wrong, and the danger rules have not been checked by emergency responders.
+      It looks for water, fire and people lying still. It cannot recognise fights or attacks. The models miss people and can be wrong, and the rules have not been checked by emergency responders.
       <a href="https://github.com/HassanCodes-max/dronesight">How it works</a></p>
   </main>
   <script type="module" src="rescue.js"></script>

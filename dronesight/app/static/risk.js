@@ -8,21 +8,20 @@ const GPS_ERROR_M = 5;  // typical consumer drone GPS
 const ANGLE_ERROR_DEGREES = 3;  // how far the entered tilt and heading may be from the truth
 const LAST_USABLE_DEGREES = 80;  // nearer the horizon, one pixel covers too much ground to trust
 
-const HAZARD_POINTS = { fire: 65, "flood water": 45, smoke: 10 };  // smoke boxes are coarse, so smoke alone is only a watch
+const HAZARD_POINTS = { fire: 65, "flood water": 45, smoke: 10 };  // smoke boxes are coarse, so smoke alone never counts
 const DEEP_POINTS = 20;  // someone far from safe ground cannot simply walk out
 const DEEP_METRES = 3;
-// Metres from the hazard and points. Fire spreads and burns at a distance. Dry land beside water is
-// safer, so it stays a watch unless other reasons add up. Smoke boxes are too coarse to measure from.
-const NEAR_POINTS = { fire: [[5, 40], [20, 25], [50, 10]], "flood water": [[5, 25], [20, 10]] };
+const NEAR_FIRE_METRES = 5;  // flames burn at a distance, but dry land beside water is safe
+const NEAR_FIRE_POINTS = 40;
 const ALONE_POINTS = 15;
 const STILL_POINTS = 15;
-const LYING_POINTS = 50;  // lying down and not moving, wherever they are, may mean someone is hurt
-const LEVELS = [[65, "CRITICAL"], [30, "HIGH"], [10, "WATCH"], [0, "CLEAR"]];
+const LYING_POINTS = 50;  // lying down, alone and not moving, wherever they are, may mean someone is hurt
 const COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
 
 const radians = (degrees) => (degrees * Math.PI) / 180;
 
-// Score one person and record each reason, so the result can be explained.
+// Someone is critical if they are in water or fire, beside flames, or lying still alone. Points only
+// decide the order among them. Each reason is recorded, so the result can be explained.
 export function assess(person) {
   let score = 0;
   const reasons = [];
@@ -34,26 +33,26 @@ export function assess(person) {
       reasons.push(`about ${Math.round(person.depthM)} m from safe ground`);
     }
   }
-  if ((!person.hazard || person.hazard === "smoke") && person.distanceM !== null && person.nearestHazard) {
-    const near = NEAR_POINTS[person.nearestHazard].find(([metres]) => person.distanceM <= metres);
-    if (near) {
-      score += near[1];
-      reasons.push(`about ${Math.round(person.distanceM)} m from ${person.nearestHazard}`);
-    }
+  const besideFire = person.nearestHazard === "fire" && person.distanceM !== null && person.distanceM <= NEAR_FIRE_METRES;
+  if (besideFire) {
+    score += NEAR_FIRE_POINTS;
+    reasons.push(`about ${Math.max(1, Math.round(person.distanceM))} m from fire`);
   }
-  if (person.lying && person.still) {
+  const hurt = person.lying && person.still && person.alone;
+  if (hurt) {
     score += LYING_POINTS;
     reasons.push("lying down and not moving");
   }
-  if (score && person.alone) {
+  const critical = hurt || besideFire || person.hazard === "fire" || person.hazard === "flood water";
+  if (critical && person.alone) {
     score += ALONE_POINTS;
     reasons.push("alone");
   }
-  if (score && person.still && !person.lying) {
+  if (critical && person.still && !person.lying) {
     score += STILL_POINTS;
     reasons.push("not moving");
   }
-  return { ...person, score, reasons, level: LEVELS.find(([minimum]) => score >= minimum)[1] };
+  return { ...person, score, reasons, critical };
 }
 
 // Most urgent first. Ties go to whoever is furthest from safety.

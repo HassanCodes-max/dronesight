@@ -15,6 +15,7 @@ const STILL_SECONDS = 4;
 const STILL_HEIGHTS = 0.6;
 const LYING_RATIO = 1.2;  // wider than tall, which a standing person's box never is from the side
 const MIN_HAZARD_SHARE = 0.005;  // specks are usually false alarms, so they are ignored
+const MAX_SMOKE_SHARE = 0.1;  // with this much of the frame in smoke, its water result is not trusted
 
 export const HAZARD_SECONDS = 2;
 export const HAZARD_MODELS = [WATER.model, FIRE.model];
@@ -105,9 +106,12 @@ async function fireFrame(ort, session, video) {
   return { width: maskWidth, height: maskHeight, mask, smoke: boxes.smoke };
 }
 
+export const smokeShare = (boxes) => boxes.reduce((sum, [x1, y1, x2, y2]) => sum + Math.max(0, Math.min(x2, 1) - Math.max(x1, 0)) * Math.max(0, Math.min(y2, 1) - Math.max(y1, 0)), 0);
+
 export async function hazardFrame(ort, sessions, video, t) {
   const flood = await floodFrame(ort, sessions[0], video);
   const fire = await fireFrame(ort, sessions[1], video);
+  if (smokeShare(fire.smoke) >= MAX_SMOKE_SHARE) flood.mask.fill(0);  // the water model takes smoke for water
   return { t, flood: { ...flood, t }, fire: { ...fire, t } };
 }
 

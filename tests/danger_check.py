@@ -23,21 +23,24 @@ from browser_check import BROWSERS, HAS_BOXES, PORT, Page, report  # noqa: E402
 LIMIT_SECONDS = 420
 RULES = """(async () => {
   const { assess, rank } = await import('./risk.js');
+  const { smokeShare } = await import('./hazards.js');
   const person = (values) => ({ id: 1, hazard: null, depthM: 0, distanceM: null, nearestHazard: null, alone: false, still: false, ...values });
-  const level = (values) => assess(person(values)).level;
+  const critical = (values) => assess(person(values)).critical;
   const order = (...people) => rank(people.map((values, i) => person({ id: i + 1, ...values }))).map((p) => p.id);
   const out = {};
-  out['deep water is critical, the edge is high'] = level({ hazard: 'flood water', depthM: 12 }) === 'CRITICAL' && level({ hazard: 'flood water', depthM: 1 }) === 'HIGH';
-  out['deep beats the edge'] = order({ hazard: 'flood water', depthM: 1 }, { hazard: 'flood water', depthM: 12 })[0] === 2;
-  out['fire is critical and beats shallow water'] = level({ hazard: 'fire' }) === 'CRITICAL' && order({ hazard: 'flood water', depthM: 1 }, { hazard: 'fire' })[0] === 2;
-  out['in water beats beside it'] = order({ distanceM: 4, nearestHazard: 'flood water' }, { hazard: 'flood water', depthM: 1 })[0] === 2;
-  out['beside water is a watch, beside flames is high'] = level({ distanceM: 4, nearestHazard: 'flood water' }) === 'WATCH' && level({ distanceM: 4, nearestHazard: 'fire' }) === 'HIGH';
-  out['smoke alone is only a watch'] = level({ hazard: 'smoke', depthM: 30 }) === 'WATCH';
+  out['anyone in water or fire is red'] = critical({ hazard: 'flood water', depthM: 1 }) && critical({ hazard: 'flood water', depthM: 12 }) && critical({ hazard: 'fire' });
+  out['beside flames is red, further away is black'] = critical({ distanceM: 4, nearestHazard: 'fire' }) && !critical({ distanceM: 20, nearestHazard: 'fire' });
+  out['beside water is black'] = !critical({ distanceM: 1, nearestHazard: 'flood water', alone: true, still: true });
+  out['smoke alone is black'] = !critical({ hazard: 'smoke', depthM: 30 });
   out['smoke beside flames counts both'] = assess(person({ hazard: 'smoke', distanceM: 4, nearestHazard: 'fire' })).reasons.join() === 'in smoke,about 4 m from fire';
-  out['alone and still are explained'] = assess(person({ hazard: 'flood water', depthM: 1, alone: true, still: true })).reasons.join() === 'in flood water,alone,not moving';
-  out['lying still is critical if alone'] = level({ lying: true, still: true, alone: true }) === 'CRITICAL' && level({ lying: true, still: true }) === 'HIGH';
-  out['lying but moving adds nothing'] = level({ lying: true }) === 'CLEAR';
-  out['far from danger is clear even if alone'] = level({ distanceM: 400, nearestHazard: 'fire', alone: true }) === 'CLEAR';
+  out['lying still and alone is red'] = critical({ lying: true, still: true, alone: true });
+  out['lying still in company or moving is black'] = !critical({ lying: true, still: true }) && !critical({ lying: true, alone: true });
+  out['far from danger is black even if alone'] = !critical({ distanceM: 400, nearestHazard: 'fire', alone: true });
+  out['deep beats the edge'] = order({ hazard: 'flood water', depthM: 1 }, { hazard: 'flood water', depthM: 12 })[0] === 2;
+  out['fire beats shallow water'] = order({ hazard: 'flood water', depthM: 1 }, { hazard: 'fire' })[0] === 2;
+  out['red always comes before black'] = order({ hazard: 'smoke', alone: true }, { distanceM: 4, nearestHazard: 'fire' })[0] === 2;
+  out['smoke is measured inside the frame only'] = smokeShare([[0, 0, 0.5, 1]]) === 0.5 && smokeShare([[-1, -1, 0.5, 0.5]]) === 0.25 && smokeShare([]) === 0;
+  out['reasons are explained'] = assess(person({ hazard: 'flood water', depthM: 1, alone: true, still: true })).reasons.join() === 'in flood water,alone,not moving';
   return JSON.stringify(out);
 })()"""
 MAP = """(async () => {
@@ -102,30 +105,32 @@ async def run(url, video, out):
         await page.shot(Path(out) / "working.png")
         checks["analysis finishes"] = await page.wait("document.getElementById('results').offsetHeight > 0", LIMIT_SECONDS)
         print("finished after", round(time.perf_counter() - started), "s:", await page.js("document.getElementById('headline').textContent"), "|",
-              await page.js("document.getElementById('subhead').textContent"), flush=True)
+              await page.js("document.getElementById('subhead').textContent"), "| error:",
+              await page.js("document.getElementById('start-error').textContent"), flush=True)
         checks["the answer comes first"] = await page.js("document.getElementById('headline').textContent.length > 5")
         await asyncio.sleep(1.5)
         found = await page.js("document.querySelectorAll('.person').length")
         if not found:  # a calm video should say so, not list anyone
-            checks["a calm video says nobody is critical"] = await page.js("document.getElementById('headline').textContent === 'Nobody critical was found'")
+            checks["a calm video says nobody is in danger"] = await page.js("document.getElementById('headline').textContent === 'Nobody in danger was found'")
+            checks["everyone else needs nothing"] = await page.js("document.getElementById('panel').hidden")
             checks["no report is offered"] = await page.js("document.getElementById('report').hidden")
             checks["boxes are drawn on the video"] = await page.js(HAS_BOXES)
             await page.shot(Path(out) / "results.png")
         else:
-            print("all found:", await page.js("[...document.querySelectorAll('.person-pick strong')].slice(0, 4).map((e) => e.textContent).join(' | ')"))
+            print("reasons:", await page.js("[...document.querySelectorAll('.person-pick strong')].map((e) => e.textContent).join(' | ')"))
+            checks["every number is explained"] = await page.js("[...document.querySelectorAll('.person')].every((e, i) => e.querySelector('.place').textContent === String(i + 1) && e.querySelector('strong').textContent.length > 3)")
+            checks["there is no list of normal people"] = await page.js("document.getElementById('others') === null")
             checks["the worst person is shown by itself"] = await page.wait("document.querySelector('.person[aria-current=true]') !== null", 15)
             await asyncio.sleep(1.5)
             checks["boxes are drawn on the video"] = await page.js(HAS_BOXES)
             print("first person:", await page.js("document.querySelector('.person')?.innerText"))
             await page.shot(Path(out) / "results.png")
-            critical = await page.js("document.querySelectorAll('#people .person').length")
             wording = "(document.getElementById('report').innerText)"
-            if critical:
-                checks["a report is ready without a click"] = await page.js("!document.getElementById('report').hidden")
-                checks["it never claims officials were told"] = await page.js(f"!/sent to|has been sent to|officials have|help is coming/i.test({wording})")
-                checks["it says nothing has been sent"] = await page.js(f"/Nothing has been sent/.test({wording})")
-                checks["the WhatsApp link holds the report"] = await page.js("document.getElementById('report-send').href.startsWith('https://wa.me/?text=DroneSight')")
-            checks["a missing location says so"] = await page.js("document.querySelector('.person').innerText.includes('Location unknown')")
+            checks["an alert shows without a click"] = await page.js("!document.getElementById('report').hidden")
+            checks["it never claims officials were told"] = await page.js(f"!/has been sent to|officials have|help is coming|help is on its way/i.test({wording})")
+            checks["it says nobody has been told"] = await page.js(f"/nobody has been told/.test({wording})")
+            checks["the WhatsApp link holds the report"] = await page.js("document.getElementById('report-send').href.startsWith('https://wa.me/?text=DroneSight')")
+            checks["a missing location says so once"] = await page.js("/No location is known/.test(document.getElementById('location-text').textContent) && !document.getElementById('people').innerText.includes('Location')")
             await page.js("""document.getElementById('where').open = true;
                 document.getElementById('drone-lat').value = 'nonsense';
                 document.getElementById('drone-lon').value = '73';
@@ -140,7 +145,7 @@ async def run(url, video, out):
                 document.getElementById('team-lon').value = '73.0500';
                 document.getElementById('where-form').requestSubmit()""")
             await asyncio.sleep(0.5)
-            checks["everyone listed gets coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => /33\\.\\d+, 73\\.\\d+|Location unknown/.test(e.innerText))")
+            checks["everyone listed gets coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => /33\\.\\d+, 73\\.\\d+/.test(e.innerText))")
             checks["the error range is shown"] = await page.js("/within about \\d+ m/.test(document.querySelector('.person').innerText)")
             checks["directions link appears"] = await page.js("document.querySelector('.person a')?.href.startsWith('https://www.google.com/maps/dir/')")
             await page.shot(Path(out) / "located.png")

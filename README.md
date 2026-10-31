@@ -1,6 +1,6 @@
 # DroneSight
 
-Add a drone video and see who needs help first. It checks for water and fire by itself, shows the critical people first with the reason and the quickest way out, and prepares a report you can send on WhatsApp. All of it runs on your own device.
+Add a drone video. Anyone in water, in fire, beside flames or lying still and alone gets a red box and a number on the video, and each number is explained. Everyone else stays in a black box and needs nothing from you. All of it runs on your own device.
 
 After a disaster, teams come back with hours of drone video and someone has to watch all of it and decide who needs help first. DroneSight does that first pass. The video is analysed in your browser and is never uploaded.
 
@@ -21,14 +21,14 @@ tracker.js: removes the drone's motion and follows each person
    |
 U-Net for water and YOLO11s plus flame colour for fire, every 2 seconds, on every video
    |
-risk.js: ranks each person at their worst moment, with reasons
+risk.js: marks each person red or black at their worst moment, with reasons
    |
 The video file's own location tag, a DJI .SRT log, or the drone's details: turn people into coordinates
    |
 A report you can copy or open in WhatsApp
 ```
 
-**Risk ranking** uses fixed rules in `dronesight/app/static/risk.js`, so every decision can be explained. Being in fire or water counts most, then how far the person is from safety, then being near a hazard, being alone and not moving. Someone 3 m or more into water is critical, because they cannot just step out. Dry land beside water is a watch, while dry land beside flames is high, because fire spreads and burns at a distance. Smoke alone is only a watch, because its boxes are coarse. The rules are written by hand, not learned from responders' decisions.
+**Who turns red** comes from fixed rules in `dronesight/app/static/risk.js`, so every decision can be explained. A person is red if they are in water or fire, within 5 m of flames, or lying still and alone. Dry land beside water stays black, and so does smoke alone, because its boxes are coarse. The water model takes smoke for water, so its result is ignored in any frame that is 10% or more smoke; on the fire test clip this took 24 people marked red down to 9, none of them wrongly called in water. Points only order the red people: fire first, then how far they are from safety, then being alone and not moving. The rules are written by hand, not learned from responders' decisions.
 
 **Distances** use each person's own height as the ruler, because an ordinary video has no scale. They are rough, and worse when the camera looks straight down, where people appear short.
 
@@ -38,7 +38,9 @@ A report you can copy or open in WhatsApp
 
 **The shortcut** is the straight line to the nearest safe ground, measured on the hazard mask, plus a Google Maps directions link when your team's position is given. Neither knows whether a route is passable.
 
-**Reporting** stays with a person. The page writes the report and opens WhatsApp, and it never says officials were told, because someone in an emergency could stop trying if they believed help was coming. Telegram alerts are written in the worker but switched off.
+**Reporting** stays with a person. The page shows a demo alert, writes the report and opens WhatsApp, but it never says officials were told, because someone in an emergency could stop trying if they believed help was coming. Telegram alerts are written in the worker but switched off.
+
+**What it cannot see.** No model here recognises fights, attacks or harassment, so a video of one gets no red box unless someone also ends up lying still and alone.
 
 **A language model was removed.** A small one wrote plain-language explanations, but it invented times, contradicted itself and promised a team would arrive quickly, so the page now writes every message from the measurements. `worker/` remains for the older question box and is not used by the live page.
 
@@ -246,6 +248,7 @@ The source code is under the MIT licence. It does not cover images, video or dat
 
 ## Update log
 
+- Made the result binary: red numbered boxes for anyone in water, in fire, beside flames or lying still and alone, black boxes for everyone else, and a list that explains only the numbered people.
 - Rebuilt the page around one job: add a video and see who needs help first. Water and fire are now checked on every video, so there is nothing to choose, and the language model was replaced by messages written from the measurements. On a real, calm park video with about 186 people it raised no false alarms.
 - Added danger ranking, map locations and plain-language explanations on visitors' own videos, all in the browser.
 - The product moved from the simulated mission to visitors' own videos. Tracking was added in the browser, and the browser model moved back to the full 1280 version after a real video showed the 960 version missing most people.
