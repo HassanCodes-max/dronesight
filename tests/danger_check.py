@@ -39,7 +39,7 @@ RULES = """(async () => {
   return JSON.stringify(out);
 })()"""
 MAP = """(async () => {
-  const { between, exitDirection, locate, parseFlightLog } = await import('./risk.js');
+  const { between, exitDirection, locate, parseFlightLog, withoutPromises } = await import('./risk.js');
   const drone = { latitude: 33.7, longitude: 73, height: 100, heading: 0, tilt: 0, fov: 90 };
   const north = (place) => (place.latitude - 33.7) * 111320;
   const east = (place) => (place.longitude - 73) * 111320 * Math.cos(33.7 * Math.PI / 180);
@@ -61,6 +61,9 @@ MAP = """(async () => {
   const log = parseFlightLog('1\\n00:00:01,000 --> 00:00:02,000\\n[latitude: 33.123456] [longitude: 73.654321] [rel_alt: 42.5 abs_alt: 600.1] [gb_yaw: 12.5 gb_pitch: -60]\\n\\n2\\n00:00:02,000 --> 00:00:03,000\\nGPS (33.5, 73.5, 18) H 30.0M\\n');
   out['newer flight logs are read'] = log[0].latitude === 33.123456 && log[0].height === 42.5 && log[0].heading === 12.5 && log[0].tilt === 30 && log[0].t === 1;
   out['older flight logs are read'] = log[1].latitude === 33.5 && log[1].longitude === 73.5 && log[1].height === 30;
+  const said = 'They are in water. The shortest way out is north. The team should be able to reach them quickly. Check the route yourself.';
+  out['promises of speed or safety are removed'] = withoutPromises(said) === 'They are in water. The shortest way out is north. Check the route yourself.';
+  out['safe ground can still be mentioned'] = withoutPromises('About 3 m from safe ground.') === 'About 3 m from safe ground.';
   return JSON.stringify(out);
 })()"""
 

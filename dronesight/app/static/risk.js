@@ -19,6 +19,9 @@ const STILL_POINTS = 15;
 const LEVELS = [[65, "CRITICAL"], [30, "HIGH"], [10, "WATCH"], [0, "CLEAR"]];
 const COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
 
+// Nothing here can see the ground, so a promise about speed or safety would be false reassurance.
+const PROMISE = /(quick|quickly|fast|easy|easily|safely|soon|should be able|can reach|will reach|is safe|are safe|route is|clear path|no obstacles?)/i;
+
 const radians = (degrees) => (degrees * Math.PI) / 180;
 
 // Score one person and record each reason, so the result can be explained.
@@ -74,6 +77,8 @@ export function locate(x, y, drone, aspect) {
     errorM: Math.round(Math.hypot(GPS_ERROR_M, slip, turn)),
   };
 }
+
+export const withoutPromises = (text) => text.split(/(?<=[.!?])\s+/).filter((sentence) => !PROMISE.test(sentence)).join(" ");
 
 export function between(from, to) {
   const north = (to.latitude - from.latitude) * METRES_PER_DEGREE;

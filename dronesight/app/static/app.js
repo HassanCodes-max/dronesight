@@ -1,7 +1,7 @@
 // All text from the server or the user goes through textContent, never innerHTML.
 import { analyse } from "./local.js";
 import { findMoments, parse } from "./search.js";
-import { between, exitDirection, locate, parseFlightLog } from "./risk.js";
+import { between, exitDirection, locate, parseFlightLog, withoutPromises } from "./risk.js";
 import { boxAt } from "./tracker.js";
 
 const $ = (id) => document.getElementById(id);
@@ -371,7 +371,8 @@ async function explain(person, place, target, button) {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? "The assistant is unavailable right now.");
     // The model sometimes drops this line, so the page adds it rather than trusting the model.
-    const answer = body.answer.includes(EMERGENCY_NOTICE) ? body.answer : `${body.answer} ${EMERGENCY_NOTICE}`;
+    const kept = withoutPromises(body.answer);
+    const answer = kept.includes(EMERGENCY_NOTICE) ? kept : `${kept} ${EMERGENCY_NOTICE}`;
     target.textContent = `Written by a small language model, so trust the numbers above over its wording. ${answer}`;
   } catch (error) {
     target.textContent = error instanceof TypeError ? "The assistant could not be reached. Please try again." : error.message;
