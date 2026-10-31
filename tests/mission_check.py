@@ -56,6 +56,8 @@ async def run(url, out):
         checks["every alert has a reason"] = bool(alerts) and all(a["why"] for a in alerts)
         checks["critical people reported"] = tally["critical"] == 0 or levels.count("CRITICAL") == tally["critical"]
         checks["nobody left waiting"] = tally["waiting"] == 0
+        checks["everyone found"] = tally["found"] == await page.js(
+            "fetch('mission/mission.json').then(r => r.json()).then(m => m.flood.sectors.reduce((n, s) => n + s.people.length, 0))")
         await page.shot(Path(out) / "mission_done.png")
         await page.call("Emulation.setDeviceMetricsOverride", width=390, height=844, deviceScaleFactor=2, mobile=True)
         await asyncio.sleep(1)

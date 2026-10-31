@@ -137,10 +137,10 @@ function advance(seconds) {
     state.drone.column = task.from.column + (target.column - task.from.column) * progress;
   } else if (task.type === "scan") {
     state.reveal[task.sector.id] = progress;
-    const next = [...task.sector.people].sort((a, b) => a.box[3] - b.box[3]).find((p) => !state.seen.has(p.id) && p.box[3] <= progress);
-    if (next) {
-      discover(next, task.sector);
-      if (!state.task) return;
+    const passed = task.sector.people.filter((p) => !state.seen.has(p.id) && p.box[3] <= progress).sort((a, b) => a.box[3] - b.box[3]);
+    for (const person of passed) {
+      discover(person, task.sector);
+      if (!state.task) return;  // a critical person broke off the scan, and it resumes afterwards
     }
   }
   if (progress >= 1) {
