@@ -9,5 +9,5 @@
   "enable_internet": true,
   "dataset_sources": ["mainhatnam/visdrone-2019-mot-val-yolo", "mariannaesposito/heridal-4k"],
   "competition_sources": [],
-  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-1", "hassanagddsbdxfg/dronesight-experiment-2"]
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-3-train"]
 }

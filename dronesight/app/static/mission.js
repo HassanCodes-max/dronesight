@@ -350,6 +350,7 @@ $("speed").addEventListener("click", () => {
   try {
     missions = await fetch("mission/mission.json").then((response) => response.json());
     await loadImages();
+    $("choose-fire").hidden = !missions.fire;
     start();
     requestAnimationFrame((time) => {
       lastFrame = time;

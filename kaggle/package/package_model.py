@@ -24,7 +24,7 @@ from ultralytics import YOLO  # noqa: E402
 
 INPUT = Path("/kaggle/input")
 NOTEBOOKS = INPUT / "notebooks/hassanagddsbdxfg"
-SOURCE = NOTEBOOKS / "dronesight-experiment-2/runs/train_vh/weights/best.pt"
+SOURCE = NOTEBOOKS / "dronesight-experiment-3-train/runs/vh_1280/weights/best.pt"
 OUT = Path("/kaggle/working")
 IMGSZ = 1280
 SITE_CONF = 0.25

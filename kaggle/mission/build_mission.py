@@ -23,8 +23,8 @@ from ultralytics import YOLO  # noqa: E402
 INPUT = Path("/kaggle/input")
 NOTEBOOKS = INPUT / "notebooks/hassanagddsbdxfg"
 PERSON_WEIGHTS = NOTEBOOKS / "dronesight-experiment-2/runs/train_vhc/weights/best.pt"
-FLOOD_WEIGHTS = NOTEBOOKS / "dronesight-experiment-4/runs/flood/weights/best.pt"
-FIRE_WEIGHTS = NOTEBOOKS / "dronesight-experiment-4/runs/fire/weights/best.pt"
+FLOOD_WEIGHTS = NOTEBOOKS / "dronesight-flood/runs/flood/weights/best.pt"
+FIRE_WEIGHTS = NOTEBOOKS / "dronesight-experiment-4/runs/fire/weights/best.pt"  # the fire mission runs once this exists
 OUT = Path("/kaggle/working")
 SCENES = OUT / "scenes"
 SEED = 0
@@ -111,19 +111,21 @@ def label_count(path):
     return len(label.read_text().splitlines()) if label.exists() else 0
 
 
-person_model, flood_model, fire_model = (YOLO(str(w)) for w in [PERSON_WEIGHTS, FLOOD_WEIGHTS, FIRE_WEIGHTS])
+person_model, flood_model = (YOLO(str(w)) for w in [PERSON_WEIGHTS, FLOOD_WEIGHTS])
+fire_model = YOLO(str(FIRE_WEIGHTS)) if FIRE_WEIGHTS.exists() else None
 unseen = unseen_scenes()
 print({name: len(images) for name, images in unseen.items()}, flush=True)
 SCENES.mkdir(parents=True, exist_ok=True)
 missions = {}
-for mission, group in [("flood", "flood_image"), ("fire", "fire_image")]:
+for mission, group in [("flood", "flood_image"), ("fire", "fire_image")][:2 if fire_model else 1]:
     pool = [p for p in unseen[group] if MIN_PEOPLE <= label_count(p) <= MAX_PEOPLE]
     random.Random(SEED).shuffle(pool)
     scored = []
     for path in pool[:CANDIDATES]:
         image = cv2.imread(str(path))
         scene = {"source": path.stem, "people": people_in(person_model, image),
-                 "true_people": label_count(path), "flood": flood_outlines(flood_model, image), **fire_boxes(fire_model, image)}
+                 "true_people": label_count(path), "flood": flood_outlines(flood_model, image),
+                 **(fire_boxes(fire_model, image) if fire_model else {"fire": [], "smoke": []})}
         hazard = sum(cv2.contourArea(np.array(o, np.float32)) for o in scene["flood"]) if mission == "flood" else len(scene["fire"]) + len(scene["smoke"])
         scored.append((hazard, len(scene["people"]), scene, image))
     # Scenes where the hazard model found something, so the mission has dangers to respond to.
