@@ -1,74 +1,99 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-edition="server">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DroneSight: search drone footage in plain English</title>
-  <meta name="description" content="Ask a question about your drone footage and jump straight to the moments that matter.">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/style.css">
+  <title>DroneSight: find people in drone footage</title>
+  <meta name="description" content="Ask a question about drone footage and jump straight to the moments that matter.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>DroneSight</a>
-    <div class="account">
-      <span id="who" class="muted"></span>
-      <button id="signin" class="ghost">Sign in</button>
-      <button id="signout" class="ghost" hidden>Sign out</button>
+    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>DroneSight</a>
+    <div id="account" class="account">
+      <span id="who" class="who"></span>
+      <button id="signin" class="quiet" type="button">Sign in</button>
+      <button id="signout" class="quiet" type="button" hidden>Sign out</button>
     </div>
   </header>
 
   <main>
-    <section class="hero">
-      <h1>Stop scrubbing. Ask your footage.</h1>
-      <p>Hours of drone video, one question. DroneSight finds the people in your flight and takes you to the exact moment.</p>
+    <section class="intro">
+      <h1>Find people in drone footage without watching all of it.</h1>
+      <p>Ask a question and jump straight to the moment. Try it on the sample flight below.</p>
     </section>
 
-    <section class="workspace">
-      <aside class="library">
-        <h2>Flights</h2>
-        <ul id="videos" class="video-list"></ul>
-        <p id="empty" class="muted" hidden>No flights yet. Upload one to begin.</p>
-        <label id="drop" class="drop" tabindex="0">
-          <input id="file" type="file" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv">
-          <strong>Upload a flight</strong>
-          <span class="muted">MP4 or MOV, up to 3 minutes</span>
-        </label>
-        <p id="upload-status" class="status" role="status"></p>
-      </aside>
-
-      <section class="viewer">
-        <div class="stage">
-          <video id="player" controls playsinline preload="metadata"></video>
+    <div class="work">
+      <section class="player" aria-label="Flight video">
+        <div id="stage" class="stage">
+          <video id="player" playsinline muted preload="auto"></video>
           <canvas id="overlay" aria-hidden="true"></canvas>
-          <p id="placeholder" class="placeholder">Choose a flight to start.</p>
+          <p id="live" class="live" hidden></p>
+          <p id="placeholder" class="placeholder">Loading the flight…</p>
         </div>
-        <form id="ask" class="ask">
-          <input id="question" maxlength="300" autocomplete="off" aria-label="Your question"
-                 placeholder="Ask about this flight, like “groups of people”">
+
+        <div class="controls">
+          <button id="play" class="control" type="button">Play</button>
+          <span id="time" class="time">0:00 / 0:00</span>
+          <label class="toggle"><input id="show-boxes" type="checkbox" checked> Show boxes</label>
+          <button id="fullscreen" class="control quiet-control" type="button">Full screen</button>
+        </div>
+
+        <div class="timeline">
+          <canvas id="activity" aria-hidden="true"></canvas>
+          <input id="seek" type="range" min="0" max="0" step="0.05" value="0" aria-label="Position in the flight">
+        </div>
+        <p class="legend"><span class="key"></span> People detected over the flight <span class="key match"></span> Matches your search</p>
+
+        <form id="ask" class="ask" role="search">
+          <label class="sr-only" for="question">Ask about this flight</label>
+          <input id="question" maxlength="300" autocomplete="off" placeholder="Ask about this flight, like “at least 20 people”">
           <button class="primary" type="submit">Search</button>
         </form>
         <div id="examples" class="chips" aria-label="Example questions"></div>
-        <p id="answer" class="answer" role="status"></p>
-        <ol id="clips" class="clips"></ol>
       </section>
-    </section>
 
-    <p class="fineprint">Uploaded video is private to your account and deleted automatically after 24 hours.
-      The detector can miss very small people, so an empty result is not proof that nobody is there.</p>
+      <aside class="side">
+        <section class="panel" aria-labelledby="results-title">
+          <h2 id="results-title">Busiest moments</h2>
+          <p id="answer" class="answer" role="status"></p>
+          <ol id="clips" class="clips"></ol>
+        </section>
+
+        <section class="panel" aria-labelledby="flights-title">
+          <h2 id="flights-title">Flights</h2>
+          <ul id="videos" class="video-list"></ul>
+          <div id="upload-area">
+            <label id="drop" class="drop">
+              <input id="file" type="file" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv">
+              <strong>Add your own flight</strong>
+              <span>MP4 or MOV, up to 3 minutes. Private to you and deleted after 24 hours.</span>
+            </label>
+            <p id="upload-status" class="status" role="status"></p>
+          </div>
+          <p id="static-note" class="status" hidden>This free edition shows one sample flight, with its detections already computed.</p>
+        </section>
+      </aside>
+    </div>
+
+    <p class="fineprint">Counts are the detector’s estimates, not exact headcounts. It can miss very small people, so finding nothing does not prove nobody is there.
+      Sample footage: <a href="https://github.com/VisDrone/VisDrone-Dataset">VisDrone dataset</a>, AISKYEYE team, Tianjin University, used here for a non-commercial demonstration.</p>
   </main>
 
   <dialog id="auth">
     <form id="auth-form" method="dialog">
       <h2 id="auth-title">Sign in</h2>
+      <p id="auth-why" class="status"></p>
       <label>Email <input id="email" type="email" required maxlength="254" autocomplete="email"></label>
-      <label>Password <input id="password" type="password" required minlength="10" maxlength="128" autocomplete="current-password"></label>
+      <label>Password <input id="password" type="password" required minlength="10" maxlength="128" autocomplete="current-password" aria-describedby="password-hint"></label>
+      <p id="password-hint" class="hint">At least 10 characters.</p>
       <p id="auth-error" class="error" role="alert"></p>
       <button class="primary" type="submit" id="auth-submit">Sign in</button>
       <button class="link" type="button" id="auth-switch">New here? Create an account</button>
       <button class="link" type="button" id="auth-close">Cancel</button>
     </form>
   </dialog>
-  <script src="/app.js" defer></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

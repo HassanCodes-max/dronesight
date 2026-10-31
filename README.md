@@ -4,7 +4,9 @@ Ask your drone footage questions in plain English.
 
 Drone teams return with hours of video and scrub through it by hand to find what matters, for example in flood response, search and rescue, or site inspection. DroneSight finds the people in a flight, indexes every detection by time, and takes you straight to the moment you asked about.
 
-**Status:** working web app with a real trained detector. It runs publicly from a laptop through a temporary link, and has no permanent host yet. Search currently understands questions about people, by count and time. Map pins, LLM questions and before and after comparison are planned, not built.
+**Live demo:** https://hassanali0987654-dronesight.static.hf.space
+
+**Status:** the live demo is a free static edition with one sample flight and no server. The full version, with accounts and uploads, runs from `run_public.bat` and has no permanent host yet. Search currently understands questions about people, by count and time. Map pins, LLM questions and before and after comparison are planned, not built.
 
 ## How it works
 
@@ -20,7 +22,7 @@ Worker process: decodes video, runs YOLO11s at 1280 through ONNX Runtime on CPU,
 
 The model runs through ONNX, so the web server needs no PyTorch or GPU. At the 1280 input it takes about 580 ms per frame on a Kaggle CPU and about 650 ms on the development laptop, so a 3-minute flight sampled every 0.25 s indexes in about 8 minutes.
 
-Search is deterministic: a question becomes a filter on stored detections. It costs nothing per query, and text can never become instructions, so there is no prompt injection risk until an LLM is added.
+Search is deterministic and runs in the browser: a question becomes a filter on the flight's detections, which also drive the live boxes and the activity timeline. It costs nothing per query, and text can never become instructions, so there is no prompt injection risk until an LLM is added.
 
 ## Security
 
@@ -30,7 +32,7 @@ No website is attack-proof. These are layered defences, and `tests/test_app.py` 
 
 - **Passwords and sessions:** Argon2 hashing, only hashes of session tokens are stored, and cookies are HttpOnly and SameSite=Strict.
 - **Access control:** another user's video returns 404 on every route, so its existence is not revealed.
-- **Brute force and abuse:** rate limits per IP on logins, searches and the API, which forged forwarded headers cannot dodge.
+- **Brute force and abuse:** rate limits per IP on logins and the API, which forged forwarded headers cannot dodge.
 - **Runaway costs:** per-user upload quotas, plus a site-wide daily cap on uploads and processing time.
 - **Uploads:** declared size is checked and bytes are counted while streaming, file type is checked from content, file names are server-generated, and videos are deleted after 24 hours.
 - **Browser attacks:** strict Content Security Policy, frame blocking, cross-site write rejection, and server text is only ever rendered as text.
@@ -59,7 +61,17 @@ Run the worker and the server in separate terminals, then open http://127.0.0.1:
 
 ## Deploy
 
-`run_public.bat` serves the site from a Windows machine through a temporary Cloudflare link, which needs no account or payment. It only works while that machine is on, and the link changes on each restart. Sign-up, search, upload and the attack checks have passed through that link.
+The live demo is a static build. It needs no server, so there is nothing to keep running and no backend to attack, but visitors can only explore the sample flight:
+
+```
+python -m dronesight.app.seed demo/flight.mp4 "Sample flight"
+python deploy/build_static.py dist
+python deploy/push_static.py <your-hf-username>/dronesight dist
+```
+
+Static hosts cannot send security headers, so its Content Security Policy is in a meta tag, which cannot stop framing.
+
+`run_public.bat` serves the full site from a Windows machine through a temporary Cloudflare link, which needs no account or payment. It only works while that machine is on, and the link changes on each restart. Sign-up, search, upload and the attack checks have passed through that link.
 
 For a permanent home, the site runs as two containers on an Ubuntu server: the app, and Caddy in front for HTTPS. The app is not exposed directly, so its rate limits see each visitor's real IP.
 
@@ -141,6 +153,7 @@ The shipped model won on the mean, but 0.250 against 0.246 is close to a tie and
 
 ## Update log
 
+- Page rebuilt around the video: boxes stay on during playback, a timeline shows people across the flight, ranked moments appear before any search, and uploads can be deleted. Search moved to the browser, and a free static edition went live.
 - Experiment 3 inference tests: the site now shrinks frames with area averaging and runs the VisDrone + HERIDAL model at 1280. Deployment moved from Hugging Face to an Ubuntu server with Caddy.
 - Experiment 2 finished: mixing datasets gave no measurable gain on unseen footage. The site moved to the model trained on all three, chosen on validation data.
 - Web app, attack tests, ONNX export and deployment script added. The first site model is the Experiment 1 winner, keeping only its two person classes.

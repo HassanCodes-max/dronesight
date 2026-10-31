@@ -24,7 +24,6 @@ class Settings:
     site_processing_seconds_per_day: int = _int("DRONESIGHT_SITE_SECONDS_PER_DAY", 3600)
 
     rate_login_per_minute: int = _int("DRONESIGHT_RATE_LOGIN", 5)
-    rate_search_per_minute: int = _int("DRONESIGHT_RATE_SEARCH", 30)
     rate_api_per_minute: int = _int("DRONESIGHT_RATE_API", 120)
 
     frame_stride_seconds: float = float(os.environ.get("DRONESIGHT_STRIDE_SECONDS", 0.25))

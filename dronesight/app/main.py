@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import db, search, security
+from . import db, security
 from .config import settings
 
 STATIC = Path(__file__).parent / "static"
@@ -33,10 +33,6 @@ app = FastAPI(title="DroneSight", lifespan=lifespan, docs_url=None, redoc_url=No
 class Credentials(BaseModel):
     email: str = Field(max_length=254)
     password: str = Field(min_length=10, max_length=128)
-
-
-class Question(BaseModel):
-    question: str = Field(min_length=1, max_length=300)
 
 
 @app.middleware("http")
@@ -196,16 +192,15 @@ def stream(video_id: str, user=Depends(security.current_user)):
     return FileResponse(row["path"], media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
 
 
-@app.post("/api/videos/{video_id}/search")
-def search_video(video_id: str, body: Question, request: Request, user=Depends(security.current_user)):
-    security.enforce_rate(request, "search", settings.rate_search_per_minute)
+@app.get("/api/videos/{video_id}/index")
+def video_index(video_id: str, user=Depends(security.current_user)):
     with db.transaction() as conn:
         row = db.visible_video(conn, video_id, _uid(user))
         if row is None:
             raise HTTPException(404, "Video not found.")
         if row["status"] != "ready":
             raise HTTPException(409, "This video is still being processed.")
-        return search.run(conn, video_id, body.question)
+        return db.video_index(conn, row)
 
 
 @app.delete("/api/videos/{video_id}", status_code=204)

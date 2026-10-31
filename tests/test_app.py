@@ -11,7 +11,7 @@ os.environ["DRONESIGHT_DATA"] = tempfile.mkdtemp()
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from dronesight.app import config, db, main, search, security, worker  # noqa: E402
+from dronesight.app import config, db, main, security, worker  # noqa: E402
 from dronesight.app.vision import Tracker, decode, letterbox, nms  # noqa: E402
 
 PASSWORD = "correct horse battery"
@@ -107,7 +107,7 @@ def test_one_user_cannot_touch_another_users_video(client):
     signed_up(client, "b@example.com")
     assert client.get(f"/api/videos/{video_id}").status_code == 404
     assert client.get(f"/api/videos/{video_id}/stream").status_code == 404
-    assert client.post(f"/api/videos/{video_id}/search", json={"question": "people"}).status_code == 404
+    assert client.get(f"/api/videos/{video_id}/index").status_code == 404
     assert client.delete(f"/api/videos/{video_id}").status_code == 404
     assert video_id not in [v["id"] for v in client.get("/api/videos").json()]
 
@@ -212,37 +212,18 @@ def test_static_mount_does_not_serve_source_or_data(client):
         assert client.get(path).status_code == 404
 
 
-def test_search_end_to_end(client):
+def test_index_groups_detections_by_time(client):
     signed_up(client)
     video_id = upload(client).json()["id"]
     make_ready(video_id, [10.0, 10.0, 10.0, 40.0])
-    r = client.post(f"/api/videos/{video_id}/search", json={"question": "groups of people"}).json()
-    assert r["understood"] and len(r["clips"]) == 1
-    assert r["clips"][0]["count"] == 3
+    index = client.get(f"/api/videos/{video_id}/index").json()
+    assert [(s["t"], len(s["boxes"])) for s in index["samples"]] == [(10.0, 3), (40.0, 1)]
 
 
-def test_empty_result_warns_it_is_not_proof(client):
+def test_index_waits_until_processing_finishes(client):
     signed_up(client)
     video_id = upload(client).json()["id"]
-    make_ready(video_id)
-    r = client.post(f"/api/videos/{video_id}/search", json={"question": "people"}).json()
-    assert r["clips"] == [] and "not proof" in r["answer"]
-
-
-@pytest.mark.parametrize("text, count, start, end", [
-    ("people", 1, None, None),
-    ("at least 2 people after 30 seconds", 2, 30, None),
-    ("more than 2 people", 3, None, None),
-    ("three people", 3, None, None),
-    ("a crowd of people before 2 minutes", 3, None, 120),
-])
-def test_parse(text, count, start, end):
-    q = search.parse(text)
-    assert (q.min_count, q.start, q.end) == (count, start, end)
-
-
-def test_parse_refuses_what_it_cannot_answer():
-    assert search.parse("where are the cars") is None
+    assert client.get(f"/api/videos/{video_id}/index").status_code == 409
 
 
 def test_rate_limiter_window_resets():
@@ -272,8 +253,8 @@ def test_real_video_is_indexed_and_searchable(client, tmp_path):
     worker.index_video(video_id, path, fake_detector)
     state = client.get(f"/api/videos/{video_id}").json()
     assert state["status"] == "ready" and state["duration"] == pytest.approx(3.0)
-    result = client.post(f"/api/videos/{video_id}/search", json={"question": "people"}).json()
-    assert result["clips"][0]["count"] == 1 and result["clips"][0]["tracks"] == 1
+    index = client.get(f"/api/videos/{video_id}/index").json()
+    assert index["duration"] == pytest.approx(3.0) and len(index["samples"][0]["boxes"]) == 1
     ranged = client.get(f"/api/videos/{video_id}/stream", headers={"Range": "bytes=0-99"})
     assert ranged.status_code == 206 and len(ranged.content) == 100
 

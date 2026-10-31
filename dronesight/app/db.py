@@ -82,3 +82,11 @@ def visible_video(conn, video_id, user_id):
         "SELECT * FROM videos WHERE id = ? AND (is_demo = 1 OR user_id = ?)",
         (video_id, user_id),
     ).fetchone()
+
+
+def video_index(conn, video):
+    """Every detection grouped by time. Search and the live boxes run in the browser from this."""
+    samples = {}
+    for row in conn.execute("SELECT t, x1, y1, x2, y2 FROM moments WHERE video_id = ? ORDER BY t", (video["id"],)):
+        samples.setdefault(row["t"], []).append([round(row[k], 4) for k in ("x1", "y1", "x2", "y2")])
+    return {"duration": video["duration"], "samples": [{"t": t, "boxes": boxes} for t, boxes in samples.items()]}
