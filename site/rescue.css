@@ -44,7 +44,11 @@
 .report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .report-actions a { display: inline-flex; align-items: center; text-decoration: none; }
 
-.location-note { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; }
+.location-note { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.place-form { display: grid; gap: 4px; margin-bottom: 8px; }
+.place-form label { font-weight: 600; }
+.place-form div { display: flex; gap: 8px; }
+.place-form input { flex: 1; min-width: 0; padding: 0 10px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
 .location-note p { margin: 0 0 8px; color: var(--muted); }
 .people-panel h2 + ol { margin-top: 8px; }
 

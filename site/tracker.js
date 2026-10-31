@@ -5,7 +5,7 @@ const REACH = 1.6;  // how far a person can move between samples, in their own b
 const MIN_SIZE_RATIO = 0.5;
 const MAX_MISSED_SECONDS = 2;
 const MIN_SECONDS_SEEN = 0.8;  // anything shorter is usually a false detection
-const MIN_HITS = 3;
+const MIN_HITS = 2;  // long videos are read once a second, so someone in view briefly is only seen a few times
 const SIZE_SMOOTHING = 2;  // samples either side
 const VELOCITY_KEPT = 0.7;
 

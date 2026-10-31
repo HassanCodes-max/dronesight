@@ -76,12 +76,20 @@
         </div>
 
         <aside id="panel" class="people-panel" aria-label="People who need help">
-          <h2>What is happening</h2>
-          <ol id="people" class="people"></ol>
           <div id="location-note" class="location-note">
             <p id="location-text"></p>
+            <form id="place-form" class="place-form">
+              <label for="place">Where was this filmed?</label>
+              <div>
+                <input id="place" placeholder="Google Maps link, or 33.6844, 73.0479" autocomplete="off">
+                <button class="primary" type="submit">Set</button>
+              </div>
+              <p id="place-error" class="error" role="alert"></p>
+            </form>
             <button id="use-my-location" class="control" type="button">Use my current location</button>
           </div>
+          <h2>What is happening</h2>
+          <ol id="people" class="people"></ol>
           <details id="where" class="where">
             <summary>Enter the drone's details for each person's exact spot</summary>
             <form id="where-form">

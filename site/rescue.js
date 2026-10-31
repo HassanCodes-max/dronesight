@@ -1,7 +1,7 @@
 // The whole page: add a video, see who needs help and where. Red boxes are numbered, the rest are black.
 // All text from the file or the visitor goes through textContent, never innerHTML.
 import { analyse } from "./local.js";
-import { exitDirection, locate, parseFlightLog, readVideoLocation } from "./risk.js";
+import { exitDirection, locate, parseFlightLog, parsePlace, readVideoLocation } from "./risk.js";
 import { boxAt } from "./tracker.js";
 
 const $ = (id) => document.getElementById(id);
@@ -50,7 +50,7 @@ function whereIs(person) {
 function placeText(person) {
   const place = whereIs(person);
   if (place) return `Location: ${coordinates(place)}, an estimate, within about ${place.errorM} m.`;
-  return area ? `Area only: ${coordinates(area)}, ${area.source}.` : null;
+  return area ? `Coordinates: ${coordinates(area)}, ${area.source}. This is the area, not this person's exact spot.` : null;
 }
 
 const mapsLink = ({ latitude, longitude }) => (team
@@ -82,8 +82,9 @@ function renderLocationNote() {
   $("location-note").hidden = Boolean(drone || flightLog.length);
   $("location-text").textContent = area
     ? `Only the general area is known: ${coordinates(area)}, ${area.source}. Each person's own spot needs the drone's height and direction.`
-    : "No location is known yet, because a normal video has no GPS in it.";
+    : "No location is known yet, because a normal video has no GPS in it. Say where it was filmed and every red person gets coordinates.";
   $("use-my-location").hidden = area !== null;
+  $("place-form").hidden = area !== null;
 }
 
 function card(person) {
@@ -341,6 +342,16 @@ $("use-my-location").addEventListener("click", () => {
   }, () => {
     $("location-text").textContent = "Your location could not be read. You can enter the drone's details instead.";
   }, { timeout: LOCATION_TIMEOUT_MS });
+});
+
+$("place-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const place = parsePlace($("place").value);
+  $("place-error").textContent = place ? "" : "That has no coordinates in it. Open the place in Google Maps and copy the long link from the address bar.";
+  if (!place) return;
+  area = { ...place, source: "as you entered" };
+  $("place").value = "";
+  refresh();
 });
 
 $("where-form").addEventListener("submit", (event) => {

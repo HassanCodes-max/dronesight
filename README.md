@@ -8,18 +8,19 @@ After a disaster, teams come back with hours of drone video and someone has to w
 
 **This is a research demo, not a rescue system.** The models miss people, the danger rules have not been checked by emergency responders, and locations are estimates. Nothing is sent to officials unless you send it yourself. In a real emergency, call your local emergency services.
 
-**Status:** live on a free static site with no server. It has not yet been tried on real flood or fire footage: the rules were tested on clips panned across disaster photos, and false alarms were checked on one real, calm video.
+**Status:** live on a free static site with no server. It was checked by eye on one real drone video of a flooded camp, one real phone clip of a flood and one real, calm park video, and on clips panned across disaster photos. It has not been tried on real fire footage. It works best from a drone. On the low-angle phone clip it over-marked people along the bank and missed a man on a boat who was only in view for two seconds.
 
 ## How it works
 
 ```
 Your video, in your browser
    |
-YOLO11s at 1280: finds people, on the graphics card through WebGPU or the processor through WebAssembly
+YOLO11s at 1280 for small people seen from above, plus YOLO11n at 640 for close or poor-quality ones,
+on the graphics card through WebGPU or the processor through WebAssembly
    |
 tracker.js: removes the drone's motion and follows each person
    |
-U-Net for water and YOLO11s plus flame colour for fire, every 2 seconds, on every video
+U-Net for water and YOLO11s plus flame colour for fire, every second, on every video
    |
 risk.js: marks each person red or black at their worst moment, with reasons
    |
@@ -28,13 +29,15 @@ The video file's own location tag, a DJI .SRT log, or the drone's details: turn 
 A report you can copy or open in WhatsApp
 ```
 
+**Water outlines** are cleaned after the model: only confident pixels count, gaps the size of a person are filled, and thin strips and small patches are removed. This was tuned by eye on real flood videos, where the raw outline spread onto roofs, walls and heads and put red boxes on people standing beside the water. It costs some foamy water at the edges.
+
 **Who turns red** comes from fixed rules in `site/risk.js`, so every decision can be explained. A person is red if they are in water or fire, within 5 m of flames, or lying still and alone. Dry land beside water stays black, and so does smoke alone, because its boxes are coarse. The water model takes smoke for water, so its result is ignored in any frame that is 10% or more smoke, and in the whole video once a quarter of its frames are, because smoke drifts in and out of view. Points only order the red people: fire first, then how far they are from safety, then being alone and not moving. The rules are written by hand, not learned from responders' decisions.
 
 **Distances** use each person's own height as the ruler, because an ordinary video has no scale. They are rough, and worse when the camera looks straight down, where people appear short.
 
 **Lying still** is flagged from the track: a box wider than tall that stays put for 4 seconds. It is the only sign of someone hurt away from water or fire, and it will miss people and raise false alarms. No model here recognises cliffs or falls.
 
-**Location** has three levels. Many phone videos carry a location tag, which the page reads from the file, and that gives the general area only. An exact spot for each person needs the drone's position, height, heading and camera tilt, typed in or read from a DJI `.SRT` log. A normal video has none of this, so the page says the location is unknown instead of guessing. The maths assumes flat ground, and each result shows an error range that grows with tilt but assumes the entered details are right. The file tag and flight log readers were tested on written examples, not on real files.
+**Location** cannot be read from the picture, so it comes from the person with the video. They can paste a Google Maps link or coordinates, and every red person then gets those coordinates, labelled as the area and not their exact spot. Many phone videos also carry a location tag, which the page reads from the file, and that too gives the general area only. An exact spot for each person needs the drone's position, height, heading and camera tilt, typed in or read from a DJI `.SRT` log. A normal video has none of this, so the page says the location is unknown instead of guessing. The maths assumes flat ground, and each result shows an error range that grows with tilt but assumes the entered details are right. The file tag and flight log readers were tested on written examples, not on real files.
 
 **The shortcut** is the straight line to the nearest safe ground, measured on the hazard mask, plus a Google Maps directions link when your team's position is given. Neither knows whether a route is passable.
 
@@ -46,9 +49,11 @@ A report you can copy or open in WhatsApp
 
 **Tracking** runs in the browser. ONNX Runtime Web runs the full 1280 people model on the visitor's graphics card through WebGPU, or on their processor through WebAssembly. `tracker.js` removes the drone's own motion by comparing frames, predicts where each person will be, matches sure detections first and lets weak ones keep a track alive, then fills gaps from both sides, because analysis runs after the flight. On a 29-second, 1080p Pexels video it followed about 186 people, and the median person was followed for 16 seconds. That is a visual check on one video, not a tracking benchmark.
 
+**Two people models.** The main model learned only small figures from above, and on a real phone clip of a flood it missed a man on a boat and most of a crowd beside the water. YOLO11n's COCO weights, exported by `kaggle/close`, found them, and they are not retrained here. The two are complementary: on a camp video the main model found 17 small people where YOLO11n found none. People whose feet are out of view are not judged, because where they stand cannot be seen.
+
 A smaller 960 model was tried first for speed. Its test recall looked close, at 37% against 44% on VisDrone, but on that real video it found only 9 to 24 people per frame against the full model's 55 to 118, so it was dropped.
 
-**Speed.** Nothing is uploaded, so the video plays within seconds and the check runs while it plays. Almost all the check's time is the people model, at about 1 second a frame on the development laptop, so the page aims to finish in about a minute by choosing how many frames to read. On the 29-second video:
+**Speed.** Nothing is uploaded, so the video plays within seconds and the check runs while it plays. Almost all the check's time is the people model, at about 1 second a frame on the development laptop, so the page aims to finish in about a minute and a half by choosing how many frames to read. The table is from before the second people model and the water check every second, which added about 20%; the 20 to 33-second videos tested since took 70 to 93 seconds. On the 29-second video:
 
 | Frames read a second | Time | People followed | Median time followed |
 |---|---|---|---|
@@ -57,7 +62,7 @@ A smaller 960 model was tried first for speed. Its test recall looked close, at 
 | **2 (used up to about 30 seconds)** | **79 s** | **172** | **17.0 s** |
 | **1 (used for longer videos)** | **49 s** | **156** | **16.0 s** |
 
-Fewer people at lower rates can mean fewer broken tracks as well as more missed people, and this is one video, so it is a guide and not a benchmark. The first video also downloads about 200 MB of models, which are then kept in the browser.
+Fewer people at lower rates can mean fewer broken tracks as well as more missed people, and this is one video, so it is a guide and not a benchmark. The first video also downloads about 120 MB of models, which are then kept in the browser. `deploy/shrink_models.py` halved them by storing large weights as 16-bit numbers; on real frames the same people were found, scores moved by under 0.001, and water outlines agreed 99.96%.
 
 ## Security
 
@@ -79,7 +84,7 @@ python deploy/build_static.py dist
 python -m http.server 8000 --directory dist
 ```
 
-The models go in `models/`: `person.onnx`, `water.onnx` and `fire.onnx`, exported by `kaggle/browser` and `kaggle/hazards`. To check the whole page, give it any video:
+The models go in `models/`: `person.onnx`, `close.onnx`, `water.onnx` and `fire.onnx`, exported by `kaggle/browser`, `kaggle/close` and `kaggle/hazards`. `python deploy/shrink_models.py` then makes the smaller copies that get published. To check the whole page, give it any video:
 
 ```
 python tests/danger_check.py http://127.0.0.1:8000 your-video.mp4 outputs/check
@@ -207,12 +212,13 @@ Experiment 5 traced grey and blue water but missed brown floodwater and shaded g
 
 ## Data and credits
 
-The source code is under the MIT licence. It does not cover images, video or datasets, which belong to their own owners. This is a free, non-commercial student project, and anything here will be removed if an owner asks.
+The source code is under the MIT licence. The people and fire models were made with [Ultralytics YOLO11](https://github.com/ultralytics/ultralytics), which is AGPL-3.0. It does not cover images, video or datasets, which belong to their own owners. This is a free, non-commercial student project, and anything here will be removed if an owner asks.
 
 - **Training only, no images republished:** [VisDrone](https://github.com/VisDrone/VisDrone-Dataset) by Zhu et al. (2021), [HERIDAL](https://www.kaggle.com/datasets/mariannaesposito/heridal-4k), [C2A](https://github.com/Ragib-Amin-Nihal/C2A) by Nihal et al. (2024), FloodNet, D-Fire and [Flood Area Segmentation](https://www.kaggle.com/datasets/faizalkarim/flood-area-segmentation).
 
 ## Update log
 
+- Added a second people model, a cleaner water outline, a water check every second, half-size model files and a box for where the video was filmed, after tests on real flood videos showed the first versions failing.
 - Made the video appear at once, with the check running while it plays, and removed the retired simulation, server and assistant code. They remain in the git history.
 - Made the result binary: red numbered boxes for anyone in water, in fire, beside flames or lying still and alone, black boxes for everyone else, and a list that explains only the numbered people.
 - Rebuilt the page around one job: add a video and see who needs help first. Water and fire are now checked on every video, so there is nothing to choose, and the language model was replaced by messages written from the measurements. On a real, calm park video with about 186 people it raised no false alarms.

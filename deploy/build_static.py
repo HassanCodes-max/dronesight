@@ -1,6 +1,7 @@
 """Build the free static site. Everything runs in the visitor's browser, so there is no server.
 
     python deploy/fetch_ort.py
+    python deploy/shrink_models.py
     python deploy/build_static.py dist
 
 The models and their runtime are published with the page. Static hosts cannot send headers, so the
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 STATIC = ROOT / "site"
 PAGE_FILES = ["rescue.js", "local.js", "tracker.js", "hazards.js", "risk.js", "style.css", "rescue.css", "favicon.svg"]
-BROWSER_MODELS = [ROOT / "models" / name for name in ("person.onnx", "water.onnx", "fire.onnx")]
+BROWSER_MODELS = [ROOT / "models/web" / name for name in ("person.onnx", "close.onnx", "water.onnx", "fire.onnx")]
 # Hugging Face redirects large files to its CDN, so they need that one extra source. Blobs are a
 # visitor's own video, and the runtime needs to compile WebAssembly. Nothing here can send it anywhere else.
 CSP = ("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: https://*.hf.co; "

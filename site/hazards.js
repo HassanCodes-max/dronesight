@@ -3,7 +3,9 @@
 import { boxAt } from "./tracker.js";
 import { rank } from "./risk.js";
 
-const WATER = { model: "water.onnx", width: 640, height: 384 };
+// Tuned by eye on real flood videos. A stricter score and these clean-ups take the outline off roofs,
+// walls and heads, at the cost of some foamy water at the edges.
+const WATER = { model: "water.onnx", width: 640, height: 384, score: 2, closeCells: 3, openCells: 8, smallestShare: 0.01 };
 const FIRE = { model: "fire.onnx", size: 640, confidence: 0.25 };
 const MEAN = [0.485, 0.456, 0.406];
 const STD = [0.229, 0.224, 0.225];
@@ -14,11 +16,12 @@ const NEIGHBOUR_HEIGHTS = 6;
 const STILL_SECONDS = 4;
 const STILL_HEIGHTS = 0.6;
 const LYING_RATIO = 1.2;  // wider than tall, which a standing person's box never is from the side
+const FEET_OUT_OF_VIEW = 0.98;  // a box reaching the bottom edge hides where the person is standing
 const MIN_HAZARD_SHARE = 0.005;  // specks are usually false alarms, so they are ignored
 const MAX_SMOKE_SHARE = 0.1;  // with this much of the frame in smoke, its water result is not trusted
 const SMOKY_VIDEO_SHARE = 0.25;  // with this many smoky frames, no water result in the video is trusted
 
-export const HAZARD_SECONDS = 2;
+export const HAZARD_SECONDS = 1;
 export const HAZARD_MODELS = [WATER.model, FIRE.model];
 
 function sized(width, height) {
@@ -42,8 +45,42 @@ function floodFrame(ort, session, video) {
   const input = new ort.Tensor("float32", blob, [1, 3, WATER.height, WATER.width]);
   return session.run({ [session.inputNames[0]]: input }).then((results) => {
     const logits = results[session.outputNames[0]].data;
-    return { width: WATER.width, height: WATER.height, mask: Uint8Array.from(logits, (value) => (value >= 0 ? 1 : 0)), smoke: [] };
+    const mask = cleanWater(Uint8Array.from(logits, (value) => (value >= WATER.score ? 1 : 0)), WATER.width, WATER.height);
+    return { width: WATER.width, height: WATER.height, mask, smoke: [] };
   });
+}
+
+// Every cell within a distance of the mask, or only those further than it from the mask's edge.
+const grown = (mask, width, height, cells) => Uint8Array.from(nearestSeed((i) => mask[i], width, height).distance, (distance) => (distance <= cells ? 1 : 0));
+const shrunk = (mask, width, height, cells) => Uint8Array.from(nearestSeed((i) => !mask[i], width, height).distance, (distance) => (distance > cells ? 1 : 0));
+
+function withoutSmallPatches(mask, width, height, smallest) {
+  const seen = new Uint8Array(mask.length);
+  const kept = new Uint8Array(mask.length);
+  for (let start = 0; start < mask.length; start += 1) {
+    if (!mask[start] || seen[start]) continue;
+    const patch = [start];
+    seen[start] = 1;
+    for (let next = 0; next < patch.length; next += 1) {
+      const cell = patch[next];
+      const sides = [cell % width ? cell - 1 : -1, (cell + 1) % width ? cell + 1 : -1, cell - width, cell + width];
+      for (const side of sides) {
+        if (side >= 0 && side < mask.length && mask[side] && !seen[side]) {
+          seen[side] = 1;
+          patch.push(side);
+        }
+      }
+    }
+    if (patch.length >= smallest) for (const cell of patch) kept[cell] = 1;
+  }
+  return kept;
+}
+
+// Fills gaps such as a person standing in the water, then removes thin strips and small patches.
+export function cleanWater(mask, width, height) {
+  const closed = shrunk(grown(mask, width, height, WATER.closeCells), width, height, WATER.closeCells);
+  const opened = grown(shrunk(closed, width, height, WATER.openCells), width, height, WATER.openCells);
+  return withoutSmallPatches(opened, width, height, WATER.smallestShare * mask.length);
 }
 
 function flamePixel(red, green, blue) {
@@ -191,7 +228,7 @@ function personAt(track, box, frame, fields, name, everyone) {
   const body = y2 - y1;
   const company = everyone.some((other) => other !== feet && Math.hypot((other[0] - feet[0]) * (width / height), other[1] - feet[1]) < NEIGHBOUR_HEIGHTS * body);
   const inSmoke = smoke.some(([left, top, right, bottom]) => feet[0] >= left && feet[0] <= right && feet[1] >= top && feet[1] <= bottom);
-  const inside = Boolean(mask[cell]);
+  const inside = Boolean(mask[cell]) && y2 < FEET_OUT_OF_VIEW;
   const way = inside ? fields.safe.from[cell] : -1;
   return {
     id: track.id,

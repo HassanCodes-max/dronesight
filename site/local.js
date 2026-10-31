@@ -3,15 +3,18 @@ import { HAZARD_MODELS, HAZARD_SECONDS, dropSmokyWater, hazardFrame, hazardSeen,
 import { Tracker, cameraShift } from "./tracker.js";
 
 const MODEL = "person.onnx";
-const SAVED_FILES = "dronesight-model-2";  // change this when the model or runtime changes
+// The main model only learned small figures from far above. This one learned everyday photos, so it
+// finds people close to the camera or in poor video. Boxes come from both.
+const CLOSE = { model: "close.onnx", size: 640 };
+const SAVED_FILES = "dronesight-model-4";  // change this when the model or runtime changes
 const SIZE = 1280;
 const CONFIDENCE = 0.1;  // low on purpose: weak boxes keep a track alive, and only strong ones start one
 const MAX_OVERLAP = 0.5;
 const MAX_SECONDS = 180;
-const TIME_BUDGET_SECONDS = 60;
+const TIME_BUDGET_SECONDS = 80;
 const RATES = [3, 2, 1];  // samples a second, best first. On a 29-second video, tracking held up down to 1
 const FIRST_RATE = 2;
-const DOWNLOAD_MB = 200;  // all the models and the runtime together
+const DOWNLOAD_MB = 120;  // all the models and the runtime together
 const FRAMES_BEFORE_CHOOSING = 3;
 const THUMBNAIL_WIDTH = 192;
 
@@ -31,8 +34,9 @@ function nms(found) {
   return kept;
 }
 
-// Raw output has shape (1, 5, N): centre x, centre y, width, height and score, in model pixels.
-function decode(output, frame) {
+// Raw output has shape (1, 5 or more, N): centre x, centre y, width, height, then a score for each
+// class in model pixels. Person is the first class in both models.
+function decode(output, view) {
   const count = output.dims[2];
   const { data } = output;
   const found = [];
@@ -40,28 +44,41 @@ function decode(output, frame) {
     const score = data[4 * count + i];
     if (score < CONFIDENCE) continue;
     const [x, y, width, height] = [data[i], data[count + i], data[2 * count + i], data[3 * count + i]];
-    found.push({ score, box: [x - width / 2, y - height / 2, x + width / 2, y + height / 2] });
+    const [x1, y1, x2, y2] = [x - width / 2, y - height / 2, x + width / 2, y + height / 2];
+    found.push({ score, box: [(x1 - view.left) / view.scale, (y1 - view.top) / view.scale, (x2 - view.left) / view.scale, (y2 - view.top) / view.scale] });
   }
-  return nms(found).map(({ score, box: [x1, y1, x2, y2] }) => ({
-    score,
-    box: [(x1 - frame.left) / frame.scale, (y1 - frame.top) / frame.scale, (x2 - frame.left) / frame.scale, (y2 - frame.top) / frame.scale],
-  }));
+  return found;
 }
 
 // Same grey padding as the training images, so the frame keeps its shape.
-function toTensor(ort, ctx, video, frame) {
+function toTensor(ort, video, { ctx, size, left, top, width, height }) {
   ctx.fillStyle = "rgb(114, 114, 114)";
-  ctx.fillRect(0, 0, SIZE, SIZE);
-  ctx.drawImage(video, frame.left, frame.top, frame.width, frame.height);
-  const { data } = ctx.getImageData(0, 0, SIZE, SIZE);
-  const pixels = SIZE * SIZE;
+  ctx.fillRect(0, 0, size, size);
+  ctx.drawImage(video, left, top, width, height);
+  const { data } = ctx.getImageData(0, 0, size, size);
+  const pixels = size * size;
   const blob = new Float32Array(3 * pixels);
   for (let i = 0; i < pixels; i += 1) {
     blob[i] = data[4 * i] / 255;
     blob[pixels + i] = data[4 * i + 1] / 255;
     blob[2 * pixels + i] = data[4 * i + 2] / 255;
   }
-  return new ort.Tensor("float32", blob, [1, 3, SIZE, SIZE]);
+  return new ort.Tensor("float32", blob, [1, 3, size, size]);
+}
+
+function viewAt(size, videoWidth, videoHeight) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingQuality = "high";
+  const scale = size / Math.max(videoWidth, videoHeight);
+  const [width, height] = [Math.round(videoWidth * scale), Math.round(videoHeight * scale)];
+  return { ctx, size, scale, width, height, left: Math.floor((size - width) / 2), top: Math.floor((size - height) / 2) };
+}
+
+async function people(ort, video, session, view) {
+  const results = await session.run({ [session.inputNames[0]]: toTensor(ort, video, view) });
+  return decode(results[session.outputNames[0]], view);
 }
 
 function greyThumbnail(ctx, video, width, height) {
@@ -110,15 +127,16 @@ async function loadModels(onProgress) {
   const adapter = await navigator.gpu?.requestAdapter().catch(() => null);
   const ort = await import(adapter ? "./ort/ort.webgpu.min.mjs" : "./ort/ort.wasm.min.mjs");
   ort.env.wasm.wasmPaths = new URL("ort/", document.baseURI).href;
-  const [binary, model, ...hazardModels] = await Promise.all([
-    saved(`ort/ort-wasm-simd-threaded${adapter ? ".asyncify" : ""}.wasm`, onBytes), saved(MODEL, onBytes), ...HAZARD_MODELS.map((path) => saved(path, onBytes)),
+  const [binary, model, closeModel, ...hazardModels] = await Promise.all([
+    saved(`ort/ort-wasm-simd-threaded${adapter ? ".asyncify" : ""}.wasm`, onBytes), saved(MODEL, onBytes), saved(CLOSE.model, onBytes), ...HAZARD_MODELS.map((path) => saved(path, onBytes)),
   ]);
   ort.env.wasm.wasmBinary = binary;
   const options = { executionProviders: adapter ? ["webgpu", "wasm"] : ["wasm"] };
   const session = await ort.InferenceSession.create(new Uint8Array(model), options);
+  const closeSession = await ort.InferenceSession.create(new Uint8Array(closeModel), options);
   const hazardSessions = [];
   for (const hazardModel of hazardModels) hazardSessions.push(await ort.InferenceSession.create(new Uint8Array(hazardModel), options));
-  return { ort, session, hazardSessions, device: adapter ? "graphics card" : "processor" };
+  return { ort, session, closeSession, hazardSessions, device: adapter ? "graphics card" : "processor" };
 }
 
 function openVideo(url) {
@@ -172,19 +190,12 @@ export async function analyse(url, onProgress) {
   const { duration, videoWidth, videoHeight } = video;
   if (duration > MAX_SECONDS) throw new Error("Please choose a video of up to 3 minutes.");
   onProgress(0, "Getting the models ready.");
-  const { ort, session, hazardSessions, device } = await loadModels(onProgress);
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = SIZE;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingQuality = "high";
+  const { ort, session, closeSession, hazardSessions, device } = await loadModels(onProgress);
+  const [far, near] = [viewAt(SIZE, videoWidth, videoHeight), viewAt(CLOSE.size, videoWidth, videoHeight)];
   const small = document.createElement("canvas");
   small.width = THUMBNAIL_WIDTH;
   small.height = Math.round((THUMBNAIL_WIDTH * videoHeight) / videoWidth);
   const smallCtx = small.getContext("2d", { willReadFrequently: true });
-  const scale = SIZE / Math.max(videoWidth, videoHeight);
-  const width = Math.round(videoWidth * scale);
-  const height = Math.round(videoHeight * scale);
-  const frame = { scale, width, height, left: Math.floor((SIZE - width) / 2), top: Math.floor((SIZE - height) / 2) };
   const toVideoPixels = videoWidth / THUMBNAIL_WIDTH;
 
   const tracker = new Tracker();
@@ -197,7 +208,7 @@ export async function analyse(url, onProgress) {
   let started = 0;
   while (time < duration) {
     await seek(video, time);
-    const results = await session.run({ [session.inputNames[0]]: toTensor(ort, ctx, video, frame) });
+    const found = nms([...await people(ort, video, session, far), ...await people(ort, video, closeSession, near)]);
     const grey = greyThumbnail(smallCtx, video, small.width, small.height);
     const shift = previous ? cameraShift(previous, grey, small.width, small.height) : { x: 0, y: 0 };
     previous = grey;
@@ -205,7 +216,7 @@ export async function analyse(url, onProgress) {
       hazards.push(await hazardFrame(ort, hazardSessions, video, time));
       nextHazard = time + HAZARD_SECONDS;
     }
-    tracker.update(time, decode(results[session.outputNames[0]], frame), { x: shift.x * toVideoPixels, y: shift.y * toVideoPixels });
+    tracker.update(time, found, { x: shift.x * toVideoPixels, y: shift.y * toVideoPixels });
     done += 1;
     if (done === 1) started = performance.now();  // the first frame sets up the model, so it says little about the rest
     const secondsPerFrame = done > 1 ? (performance.now() - started) / (done - 1) / 1000 : null;

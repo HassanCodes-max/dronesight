@@ -39,6 +39,17 @@ RULES = """(async () => {
   out['deep beats the edge'] = order({ hazard: 'flood water', depthM: 1 }, { hazard: 'flood water', depthM: 12 })[0] === 2;
   out['fire beats shallow water'] = order({ hazard: 'flood water', depthM: 1 }, { hazard: 'fire' })[0] === 2;
   out['red always comes before black'] = order({ hazard: 'smoke', alone: true }, { distanceM: 4, nearestHazard: 'fire' })[0] === 2;
+  const { cleanWater } = await import('./hazards.js');
+  const blank = (width, height) => new Uint8Array(width * height);
+  const pond = blank(100, 100);
+  for (let y = 20; y < 80; y += 1) for (let x = 20; x < 80; x += 1) pond[y * 100 + x] = 1;
+  const middle = 50 * 100 + 50;
+  const withGap = pond.slice();
+  withGap[middle] = 0;
+  out['a person-sized gap in water is filled'] = cleanWater(withGap, 100, 100)[middle] === 1;
+  const strip = pond.slice();
+  for (let x = 0; x < 100; x += 1) strip[5 * 100 + x] = 1;
+  out['a thin strip of false water goes'] = cleanWater(strip, 100, 100)[5 * 100 + 50] === 0;
   out['smoke is measured inside the frame only'] = smokeShare([[0, 0, 0.5, 1]]) === 0.5 && smokeShare([[-1, -1, 0.5, 0.5]]) === 0.25 && smokeShare([]) === 0;
   const frame = (smoke) => ({ flood: { mask: new Uint8Array([1, 1]) }, fire: { smoke } });
   const heavy = [[0, 0, 0.5, 1]];
@@ -52,7 +63,7 @@ RULES = """(async () => {
   return JSON.stringify(out);
 })()"""
 MAP = """(async () => {
-  const { between, exitDirection, locate, parseFlightLog, readVideoLocation } = await import('./risk.js');
+  const { between, exitDirection, locate, parseFlightLog, parsePlace, readVideoLocation } = await import('./risk.js');
   const drone = { latitude: 33.7, longitude: 73, height: 100, heading: 0, tilt: 0, fov: 90 };
   const north = (place) => (place.latitude - 33.7) * 111320;
   const east = (place) => (place.longitude - 73) * 111320 * Math.cos(33.7 * Math.PI / 180);
@@ -83,6 +94,11 @@ MAP = """(async () => {
   out['a location in the file is read'] = read?.latitude === 33.6844 && read?.longitude === 73.0479;
   out['a phone video location is read'] = (await readVideoLocation(apple))?.longitude === 151.2093;
   out['no location in the file gives none'] = (await readVideoLocation(plain)) === null;
+  out['typed coordinates are read'] = parsePlace(' 33.6844, 73.0479 ')?.longitude === 73.0479 && parsePlace('-33.8 151.2')?.latitude === -33.8;
+  out['a Google Maps link is read'] = parsePlace('https://www.google.com/maps/place/Isb/@33.6,73.0,15z/data=!3m1!4b1!4m6!3m5!1s0x38!8m2!3d33.6844!4d73.0479')?.latitude === 33.6844;
+  out['a Google Maps view link is read'] = parsePlace('https://www.google.com/maps/@33.6844,73.0479,15z')?.longitude === 73.0479;
+  out['a query link is read'] = parsePlace('https://maps.google.com/?q=33.6844,73.0479')?.latitude === 33.6844;
+  out['nonsense gives no place'] = parsePlace('Islamabad') === null && parsePlace('https://maps.app.goo.gl/abc123') === null && parsePlace('95, 200') === null;
   return JSON.stringify(out);
 })()"""
 
@@ -143,6 +159,11 @@ async def run(url, video, out):
             checks["it says nobody has been told"] = await page.js(f"/nobody has been told/.test({wording})")
             checks["the WhatsApp link holds the report"] = await page.js("document.getElementById('report-send').href.startsWith('https://wa.me/?text=DroneSight')")
             checks["a missing location says so once"] = await page.js("/No location is known/.test(document.getElementById('location-text').textContent) && !document.getElementById('people').innerText.includes('Location')")
+            await page.js("document.getElementById('place').value = 'somewhere'; document.getElementById('place-form').requestSubmit()")
+            checks["a place with no coordinates is refused"] = await page.js("document.getElementById('place-error').textContent !== ''")
+            await page.js("document.getElementById('place').value = '33.6844, 73.0479'; document.getElementById('place-form').requestSubmit()")
+            checks["a typed place gives every red person coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => e.innerText.includes('33.684400, 73.047900'))")
+            checks["the report carries the coordinates"] = await page.js("decodeURIComponent(document.getElementById('report-send').href).includes('33.684400, 73.047900')")
             await page.js("""document.getElementById('where').open = true;
                 document.getElementById('drone-lat').value = 'nonsense';
                 document.getElementById('drone-lon').value = '73';
