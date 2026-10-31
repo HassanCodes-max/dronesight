@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-edition="server">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -67,6 +67,17 @@
         <ol id="alerts" class="alerts" aria-live="polite"></ol>
       </section>
     </div>
+
+    <section id="ask-panel" class="ask-panel" aria-labelledby="ask-title" hidden>
+      <h2 id="ask-title">Ask about this mission</h2>
+      <form id="mission-ask" class="ask">
+        <label class="sr-only" for="mission-question">Ask about this mission</label>
+        <input id="mission-question" maxlength="300" autocomplete="off" placeholder="Like “who is in most danger?”">
+        <button class="primary" type="submit">Ask</button>
+      </form>
+      <div id="mission-chips" class="chips" aria-label="Example questions"></div>
+      <p id="mission-answer" class="answer" role="status"></p>
+    </section>
 
     <p class="fineprint"><strong>This is a research simulation, not a rescue system. In a real emergency, call your local emergency services.</strong>
       The flight, location and ground scale are simulated. Scenes are real aerial disaster photos with people added by the

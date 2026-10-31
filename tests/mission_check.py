@@ -67,6 +67,12 @@ async def run(url, out):
         if await page.js("!document.getElementById('choose-fire').hidden"):
             await page.js("document.getElementById('choose-fire').click()")
             await watch(page, "fire", out, checks)
+        if await page.js("!document.getElementById('ask-panel').hidden") and "127.0.0.1" not in url:  # the worker refuses other sites
+            await page.js("document.querySelector('#mission-chips .chip').click()")
+            checks["assistant answers about the fire mission"] = await page.wait(
+                "/fire|sector|critical/i.test(document.getElementById('mission-answer').textContent) && "
+                "!document.getElementById('mission-answer').textContent.includes('Thinking')", 30)
+            print("assistant:", await page.js("document.getElementById('mission-answer').textContent"))
         await page.call("Emulation.setDeviceMetricsOverride", width=390, height=844, deviceScaleFactor=2, mobile=True)
         await asyncio.sleep(1)
         checks["mobile has no sideways scroll"] = await page.js("document.documentElement.scrollWidth <= window.innerWidth")

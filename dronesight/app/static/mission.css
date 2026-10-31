@@ -62,6 +62,11 @@
 .alert .meta { color: var(--muted); font-size: 13px; }
 .alert a { color: var(--text); font-size: 14px; }
 
+.ask-panel { margin-top: 16px; padding: 14px; background: var(--panel); border-radius: var(--radius); }
+.ask-panel h2 { margin: 0; font-size: 17px; }
+.ask-panel .ask { margin-top: 8px; }
+.ask-panel .answer { margin: 10px 0 0; color: var(--text); }
+
 @media (max-width: 1000px) {
   .mission-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "camera" "hq" "map"; }
   .hq-panel { max-height: 340px; }

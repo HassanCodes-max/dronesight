@@ -16,6 +16,8 @@ const FLOOD_FILL = "rgba(64, 156, 255, 0.32)";
 const FIRE_FILL = "rgba(255, 106, 40, 0.42)";
 const SMOKE_FILL = "rgba(190, 190, 190, 0.16)";
 const HOME = { row: 2.75, column: -0.75 };
+const ASK_URL = document.documentElement.dataset.askUrl ?? "";
+const EXAMPLES = ["Who is in most danger?", "Which sector is worst?", "How is risk decided?"];
 
 let missions = null;
 let name = "flood";
@@ -330,7 +332,25 @@ function choose(next) {
   name = next;
   $("choose-flood").setAttribute("aria-pressed", String(name === "flood"));
   $("choose-fire").setAttribute("aria-pressed", String(name === "fire"));
+  $("mission-answer").textContent = "";
   start();
+}
+
+// The worker holds each mission's facts, so the page only says which mission is on screen.
+async function askMission(question) {
+  $("mission-answer").textContent = "Thinking…";
+  try {
+    const response = await fetch(ASK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, mission: name }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "The assistant is unavailable right now.");
+    $("mission-answer").textContent = body.answer;
+  } catch (error) {
+    $("mission-answer").textContent = error.message;
+  }
 }
 
 async function loadImages() {
@@ -357,6 +377,24 @@ $("speed").addEventListener("click", () => {
   speedIndex = (speedIndex + 1) % SPEEDS.length;
   $("speed").textContent = `Speed ${SPEEDS[speedIndex]}×`;
 });
+
+$("mission-ask").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const question = $("mission-question").value.trim();
+  if (question) askMission(question);
+});
+$("ask-panel").hidden = !ASK_URL;
+$("mission-chips").append(...EXAMPLES.map((question) => {
+  const chip = document.createElement("button");
+  chip.className = "chip";
+  chip.type = "button";
+  chip.textContent = question;
+  chip.addEventListener("click", () => {
+    $("mission-question").value = question;
+    askMission(question);
+  });
+  return chip;
+}));
 
 (async () => {
   try {
