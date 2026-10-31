@@ -1,6 +1,7 @@
 // All text from the server or the user goes through textContent, never innerHTML.
 import { analyse } from "./local.js";
 import { findMoments, parse } from "./search.js";
+import { boxAt } from "./tracker.js";
 
 const $ = (id) => document.getElementById(id);
 const STATIC_EDITION = document.documentElement.dataset.edition === "static";
@@ -16,6 +17,8 @@ const SAMPLE_REACH_SECONDS = 0.6;  // a sample stands for the video this long af
 const BAR_WIDTH = 4;
 const BOX_COLOUR = "#ffd84d";
 const BOX_EDGE = "rgba(0, 0, 0, 0.75)";
+const ID_SIZE = 11;
+const ID_MIN_BOX = 22;  // on-screen pixels, so tiny people do not disappear under their numbers
 const BAR_COLOUR = "#5f7082";
 const PLAYHEAD_COLOUR = "#f2f5f8";
 
@@ -239,13 +242,20 @@ function fitCanvas(canvas) {
   return [ctx, rect.width, rect.height];
 }
 
+// Boxes for this moment. A tracked video has them for every moment, not just its samples.
+function boxesNow() {
+  if (selected?.status !== "ready" || !index) return null;
+  if (!index.tracks) return sampleAt(player.currentTime)?.boxes.map((box) => ({ box })) ?? null;
+  return index.tracks.map((track) => ({ id: track.id, box: boxAt(track, player.currentTime) })).filter((item) => item.box);
+}
+
 function drawBoxes() {
   const [ctx, stageWidth, stageHeight] = fitCanvas($("overlay"));
-  const sample = selected?.status === "ready" ? sampleAt(player.currentTime) : null;
+  const found = boxesNow();
   const live = $("live");
-  live.hidden = !sample;
-  if (sample) live.textContent = `${people(sample.boxes.length)} in view`;
-  if (!sample || !$("show-boxes").checked || !player.videoWidth) return;
+  live.hidden = !found;
+  if (found) live.textContent = `${people(found.length)} in view`;
+  if (!found || !$("show-boxes").checked || !player.videoWidth) return;
   const fit = Math.min(stageWidth / player.videoWidth, stageHeight / player.videoHeight);
   const width = player.videoWidth * fit;
   const height = player.videoHeight * fit;
@@ -254,9 +264,14 @@ function drawBoxes() {
   for (const [colour, lineWidth] of [[BOX_EDGE, 3], [BOX_COLOUR, 1.5]]) {
     ctx.strokeStyle = colour;
     ctx.lineWidth = lineWidth;
-    for (const [x1, y1, x2, y2] of sample.boxes) {
+    for (const { box: [x1, y1, x2, y2] } of found) {
       ctx.strokeRect(left + x1 * width, top + y1 * height, (x2 - x1) * width, (y2 - y1) * height);
     }
+  }
+  ctx.font = `600 ${ID_SIZE}px system-ui, sans-serif`;
+  ctx.fillStyle = BOX_COLOUR;
+  for (const { id, box: [x1, y1, , y2] } of found) {
+    if (id && (y2 - y1) * height >= ID_MIN_BOX) ctx.fillText(id, left + x1 * width, top + y1 * height - 2);
   }
 }
 
@@ -338,7 +353,7 @@ async function analyseHere(file) {
       renderVideos();
     });
     Object.assign(localVideo, { status: "ready", duration: local.index.duration, local });
-    status.textContent = "Done. Your video stayed on this device, and it goes when you close the page.";
+    status.textContent = `Done. About ${people(local.index.tracks.length)} followed. Your video stayed on this device, and it goes when you close the page.`;
     await selectVideo(localVideo);
   } catch (error) {
     Object.assign(localVideo, { status: "failed", message: error.message });
@@ -498,7 +513,7 @@ drop.addEventListener("drop", (event) => {
 (async () => {
   if (STATIC_EDITION) {
     $("account").hidden = true;
-    $("upload-hint").textContent = "MP4 or MOV, up to 3 minutes. It stays on your device and nothing is uploaded. It finds people only, about once a second, and takes a few minutes.";
+    $("upload-hint").textContent = "MP4 or MOV, up to 3 minutes. It stays on your device and nothing is uploaded. Longer videos take several minutes.";
   } else {
     const me = await api("api/me");
     setUser(me.email);

@@ -20,7 +20,7 @@ from deploy.build_worker import topics  # noqa: E402
 from dronesight.app import db  # noqa: E402
 
 STATIC = ROOT / "dronesight/app/static"
-BROWSER_MODEL = ROOT / "models/person_960.onnx"
+BROWSER_MODEL = ROOT / "models/person.onnx"
 # Hugging Face redirects large files to its CDN, so they need that one extra source. Blobs are a
 # visitor's own video, and the runtime needs to compile WebAssembly.
 CSP = ("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: https://*.hf.co; "
@@ -33,10 +33,10 @@ colorFrom: yellow
 colorTo: gray
 sdk: static
 pinned: false
-short_description: Find people in drone footage without watching all of it
+short_description: Find and follow every person in your drone video
 ---
 
-Ask a question about drone footage and jump straight to the moment.
+Add a drone video and every person in it is followed, on your own device.
 """
 
 
@@ -54,13 +54,13 @@ def main(out, assistant=""):
         (out / "index.json").write_text(json.dumps(db.video_index(conn, video), separators=(",", ":")))
     (out / "facts.json").write_text(json.dumps(topics(), separators=(",", ":")))
     meta = f'  <meta http-equiv="Content-Security-Policy" content="{CSP.format(assistant=assistant)}">\n'
-    # The mission is the front page. The recorded flight moves to its own page.
-    for source, target in [("index.html", "footage.html"), ("mission.html", "index.html")]:
-        html = (out / source).read_text(encoding="utf-8")
-        html = html.replace('data-edition="server"', f'data-edition="static" data-ask-url="{assistant}"')
-        html = html.replace('  <meta name="viewport"', meta + '  <meta name="viewport"', 1)
-        (out / target).write_text(html, encoding="utf-8", newline="\n")
-    (out / "mission.html").unlink()
+    html = (out / "index.html").read_text(encoding="utf-8")
+    html = html.replace('data-edition="server"', f'data-edition="static" data-ask-url="{assistant}"')
+    html = html.replace('  <meta name="viewport"', meta + '  <meta name="viewport"', 1)
+    (out / "index.html").write_text(html, encoding="utf-8", newline="\n")
+    shutil.rmtree(out / "mission")
+    for name in ["mission.html", "mission.js", "mission.css"]:
+        (out / name).unlink()
     (out / "README.md").write_text(CARD, encoding="utf-8", newline="\n")
     print(f"{sum(f.stat().st_size for f in out.rglob('*') if f.is_file()) / 1e6:.1f} MB in {out}")
 

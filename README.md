@@ -1,14 +1,14 @@
 # DroneSight
 
-A simulated rescue drone that finds people in a flood or fire, works out who is in most danger, and sends their location to headquarters before moving on.
+Add a drone video and every person in it is found and followed, on your own device.
 
-After a disaster, a drone can cover ground faster than any search team, but someone still has to watch the video and decide who needs help first. DroneSight shows how that step could work: the drone flies its search pattern, its camera view is analysed, the most critical people are reported with a latitude and longitude, and it moves to the next sector.
+After a disaster, teams come back with hours of drone video and someone has to watch all of it. DroneSight finds each person, keeps following them as they and the drone move, and lets you jump to the moments that matter. The video is analysed in your browser and is never uploaded.
 
 **Live demo:** https://hassanali0987654-dronesight.static.hf.space
 
-**This is a research simulation, not a rescue system.** The flight, location and ground scale are simulated, and the risk rules have not been validated by emergency responders. In a real emergency, call your local emergency services.
+**This is a research demo, not a rescue system.** In a real emergency, call your local emergency services.
 
-**Status:** the flood and fire missions are live on a free static site with no server. A second page explores a recorded flight, and visitors can analyse their own video there, in their own browser. Both pages have a free question box backed by a Cloudflare Worker. Alerts to a real Telegram headquarters are written and tested against a fake Telegram, but switched off. The full version with accounts and server uploads runs locally and has no permanent host.
+**Status:** finding and following people on a visitor's own video is live on a free static site with no server. Flagging who is in danger, map locations and an assistant that explains them are being rebuilt for real videos. An earlier simulated mission was retired, and its code remains in the repository.
 
 ## How it works
 
@@ -38,7 +38,9 @@ SQLite: users, videos, every detection with its time and track
 Worker process: decodes video, runs YOLO11s at 1280 through ONNX Runtime on CPU, tracks people
 ```
 
-**Your own video:** the free site has no server to send a file to, so the visitor's device does the work. ONNX Runtime Web runs a 960 version of the people model on their graphics card through WebGPU, or on their processor through WebAssembly, once a second. The video is never sent anywhere, and `tests/upload_check.py` checks that the page makes no upload request. The result has the same shape as the server's index, so the same boxes, timeline and search work on it. The 42-second sample took 30 seconds with graphics support and 87 seconds without on the development laptop, after a first download of about 70 MB. Flood and fire are not analysed on uploads, because those models were run in advance on a server.
+**Your own video:** the free site has no server to send a file to, so the visitor's device does the work. ONNX Runtime Web runs the full 1280 people model on their graphics card through WebGPU, or on their processor through WebAssembly. `tracker.js` removes the drone's own motion by comparing frames, predicts where each person will be, matches sure detections first and lets weak ones keep a track alive, then fills gaps from both sides, because analysis runs after the flight. It samples up to five times a second, as many as fit about seven minutes on that device. `tests/upload_check.py` checks that the page makes no upload request. On a 29-second, 1080p Pexels video it followed about 186 people in just under 3 minutes on the development laptop, and the median person was followed for 16 seconds. That is a visual check on one video, not a tracking benchmark.
+
+A smaller 960 model was tried first for speed. Its test recall looked close, at 37% against 44% on VisDrone, but on that real video it found only 9 to 24 people per frame against the full model's 55 to 118, so it was dropped.
 
 The model runs through ONNX, so the web server needs no PyTorch or GPU. At the 1280 input it takes about 565 ms per frame on a Kaggle CPU and about 650 ms on the development laptop, so a 3-minute flight sampled every 0.25 s indexes in about 8 minutes.
 
@@ -196,8 +198,6 @@ Through the site's shrinking and NMS, on images that played no part in any choic
 | VisDrone test-dev | 1,610 | 27,382 | 0.197 | 0.478 | 44% | 69% |
 | HERIDAL, four places held out | 404 | 1,743 | 0.391 | 0.714 | 67% | 72% |
 
-The upload page runs the same weights at 960, a size set by speed, not by these scores. It found 37% in VisDrone and 63% in HERIDAL, with 69% and 70% of its boxes correct.
-
 Found and correct are at confidence 0.25, with a box counted correct at IoU 0.5. The same model found 66% in VisDrone validation and 43% in HERIDAL validation, so a single location or split can move this figure a lot. It misses between a third and just over half of people, which is why the site says so and why a real system would need a person watching the feed.
 
 ### Experiment 4: seeing the hazard (each model scored once on its own test split)
@@ -230,6 +230,7 @@ The source code is under the MIT licence. It does not cover images, video or dat
 
 ## Update log
 
+- The product moved from the simulated mission to visitors' own videos. Tracking was added in the browser, and the browser model moved back to the full 1280 version after a real video showed the 960 version missing most people.
 - Added analysis of a visitor's own video in their browser, with no server. Missions moved to the largest source photos, up to 3600 pixels wide against as little as 230, because many scenes were blurry when shown large. The assistant now reads its facts from the site, so new data needs no worker update.
 - Missions moved to the Experiment 6 water model, and the people model was scored once on test data. The site now quotes the test figures, which are lower for VisDrone and higher for HERIDAL than the validation ones.
 - With accurate water, 168 of 215 flood people ranked high, because dry land beside water scored almost the same as standing in it. Fire and flood now score distance differently, and nothing scores points for being near a smoke box.

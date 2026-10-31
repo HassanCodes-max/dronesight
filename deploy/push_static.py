@@ -14,7 +14,8 @@ from huggingface_hub import HfApi
 def main(repo_id, folder):
     api = HfApi()
     api.create_repo(repo_id, repo_type="space", space_sdk="static", exist_ok=True)
-    api.upload_folder(repo_id=repo_id, repo_type="space", folder_path=folder, commit_message="Publish DroneSight")
+    # Files no longer in the build are removed too, so the site is exactly this folder.
+    api.upload_folder(repo_id=repo_id, repo_type="space", folder_path=folder, commit_message="Publish DroneSight", delete_patterns="*")
     print(f"https://huggingface.co/spaces/{repo_id}")
 
 

@@ -32,15 +32,15 @@ async def run(url, video, out, graphics):
         await page.call("Emulation.setDeviceMetricsOverride", width=1280, height=1000, deviceScaleFactor=1, mobile=False)
         if not graphics:
             await page.call("Page.addScriptToEvaluateOnNewDocument", source="delete Navigator.prototype.gpu")
-        await page.call("Page.navigate", url=f"{url}/footage.html")
+        await page.call("Page.navigate", url=f"{url}/")
         checks = {"sample flight loads": await page.wait("document.querySelectorAll('.clip').length > 1", 30)}
         checks["upload box shows"] = await page.js("document.getElementById('drop').offsetHeight > 0")
         root = (await page.call("DOM.getDocument"))["root"]["nodeId"]
         node = (await page.call("DOM.querySelector", nodeId=root, selector="#file"))["nodeId"]
         started = time.perf_counter()
         await page.call("DOM.setFileInputFiles", nodeId=node, files=[str(Path(video).resolve())])
-        checks["progress shows"] = await page.wait("/Getting the model|Finding people/.test(document.getElementById('upload-status').textContent)", 20)
-        ready = await page.wait("/Done\\.|Finding people/.test(document.getElementById('upload-status').textContent)", 180)
+        checks["progress shows"] = await page.wait("/Getting the model|Following people/.test(document.getElementById('upload-status').textContent)", 20)
+        ready = await page.wait("/Done\\.|Following people/.test(document.getElementById('upload-status').textContent)", 180)
         print("model ready after", round(time.perf_counter() - started), "s:", await page.js("document.getElementById('upload-status').textContent"), flush=True)
         checks["analysis finishes"] = ready and await page.wait("document.getElementById('upload-status').textContent.startsWith('Done.')", LIMIT_SECONDS)
         print("finished after", round(time.perf_counter() - started), "s:", await page.js("document.getElementById('upload-status').textContent"), flush=True)
@@ -63,13 +63,13 @@ async def run(url, video, out, graphics):
         print("non-GET requests:", json.dumps(posts))
         checks["nothing was sent from the device"] = not posts
         before = len(page.events)
-        await page.call("Page.navigate", url=f"{url}/footage.html")
+        await page.call("Page.navigate", url=f"{url}/")
         await page.wait("document.querySelectorAll('.clip').length > 1", 30)
         root = (await page.call("DOM.getDocument"))["root"]["nodeId"]
         node = (await page.call("DOM.querySelector", nodeId=root, selector="#file"))["nodeId"]
         started = time.perf_counter()
         await page.call("DOM.setFileInputFiles", nodeId=node, files=[str(Path(video).resolve())])
-        await page.wait("/Finding people/.test(document.getElementById('upload-status').textContent)", 60)
+        await page.wait("/Following people/.test(document.getElementById('upload-status').textContent)", 60)
         print("second video ready after", round(time.perf_counter() - started), "s", flush=True)
         again = [e["params"]["request"]["url"] for e in page.events[before:] if e.get("method") == "Network.requestWillBeSent"]
         big = [u for u in again if ".onnx" in u or ".wasm" in u or "xet" in u]
