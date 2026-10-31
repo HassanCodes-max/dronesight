@@ -358,6 +358,7 @@ async function loadImages() {
   images = new Map();
   await Promise.all(Object.values(missions).flatMap((m) => m.sectors.map((sector) => new Promise((resolve) => {
     const image = new Image();
+    image.crossOrigin = "anonymous";  // large files come from a CDN, which must not lock the canvas
     image.onload = () => {
       images.set(sector.image, image);
       resolve();
