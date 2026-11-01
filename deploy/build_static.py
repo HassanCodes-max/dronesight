@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 STATIC = ROOT / "site"
-PAGE_FILES = ["rescue.js", "local.js", "tracker.js", "hazards.js", "risk.js", "style.css", "rescue.css", "favicon.svg"]
+PAGE_FILES = ["rescue.js", "local.js", "tracker.js", "hazards.js", "risk.js", "places.csv", "style.css", "rescue.css", "favicon.svg"]
 BROWSER_MODELS = [ROOT / "models/web" / name for name in ("person.onnx", "close.onnx", "water.onnx", "fire.onnx")]
 # Hugging Face redirects large files to its CDN, so they need that one extra source. Blobs are a
 # visitor's own video, and the runtime needs to compile WebAssembly. Nothing here can send it anywhere else.

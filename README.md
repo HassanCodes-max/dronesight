@@ -24,7 +24,7 @@ U-Net for water and YOLO11s plus flame colour for fire, every second, on every v
    |
 risk.js: marks each person red or black at their worst moment, with reasons
    |
-The video file's own location tag or a DJI .SRT log: turn people into coordinates
+The video file's own location tag or a DJI .SRT log: name the main area
    |
 A report you can copy or open in WhatsApp
 ```
@@ -37,11 +37,11 @@ A report you can copy or open in WhatsApp
 
 **Lying still** is flagged from the track: a box wider than tall that stays put for 4 seconds. It is the only sign of someone hurt away from water or fire, and it will miss people and raise false alarms. No model here recognises cliffs or falls.
 
-**Location** is never typed in and never guessed. A normal video has no GPS, so coordinates come from a DJI .SRT log, which gives each person their own spot with an error range, or from the location tag many phone videos carry, which gives the area. A report can only be sent when one of these exists, because a report with no location cannot help anyone reach a person.
+**The main area** is named, not given as coordinates, because that is what tells help where to go. A normal video has no GPS, so the area comes from the location tag many phone videos carry, or from a DJI .SRT log. The nearest town comes from a [GeoNames](https://www.geonames.org/) list (CC BY 4.0) published with the page, so naming a place sends nothing anywhere. With neither source the page says the area is not known, because a wrong guess could send help to the wrong place. Working out the area from the picture alone is being tested in `kaggle/locate`, and is not on the site.
 
 **The shortcut** is the straight line to the nearest safe ground, measured on the hazard mask, and it does not know whether a route is passable.
 
-**Reporting** stays with a person. The page shows a demo alert, writes the report and opens WhatsApp, but it never says officials were told, because someone in an emergency could stop trying if they believed help was coming.
+**Reporting** stays with a person. The page shows a demo alert, but it never says officials were told, because someone in an emergency could stop trying if they believed help was coming.
 
 **What it cannot see.** No model here recognises fights, attacks or harassment, so a video of one gets no red box unless someone also ends up lying still and alone.
 

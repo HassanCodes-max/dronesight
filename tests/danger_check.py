@@ -78,24 +78,11 @@ RULES = """(async () => {
   return JSON.stringify(out);
 })()"""
 MAP = """(async () => {
-  const { between, exitDirection, locate, parseFlightLog, readVideoLocation } = await import('./risk.js');
-  const drone = { latitude: 33.7, longitude: 73, height: 100, heading: 0, tilt: 0, fov: 90 };
-  const north = (place) => (place.latitude - 33.7) * 111320;
-  const east = (place) => (place.longitude - 73) * 111320 * Math.cos(33.7 * Math.PI / 180);
-  const near = (a, b, tolerance = 0.5) => Math.abs(a - b) < tolerance;
+  const { exitDirection, nameOfPlace, parseFlightLog, readVideoLocation } = await import('./risk.js');
   const out = {};
-  const middle = locate(0.5, 0.5, drone, 1);
-  out['the picture centre is below the drone'] = near(north(middle), 0) && near(east(middle), 0);
-  out['the top of the picture is ahead'] = near(north(locate(0.5, 0, drone, 1)), 100);
-  out['the right of the picture is east'] = near(east(locate(1, 0.5, drone, 1)), 100);
-  const facingEast = locate(0.5, 0, { ...drone, heading: 90 }, 1);
-  out['heading turns the ground'] = near(east(facingEast), 100) && near(north(facingEast), 0);
-  const tilted = locate(0.5, 0.5, { ...drone, tilt: 45 }, 1);
-  out['a tilted camera looks ahead'] = near(north(tilted), 100);
-  out['above the horizon has no location'] = locate(0.5, 0, { ...drone, tilt: 80 }, 1) === null;
-  out['error grows with tilt'] = locate(0.5, 0.5, { ...drone, tilt: 60 }, 1).errorM > locate(0.5, 0.5, drone, 1).errorM;
-  const trip = between({ latitude: 33.7, longitude: 73 }, { latitude: 33.7009, longitude: 73 });
-  out['distance and direction'] = near(trip.metres, 100, 1) && trip.direction === 'north';
+  out['a position gets the name of its area'] = (await nameOfPlace({ latitude: 33.6844, longitude: 73.0479 })).includes('Islamabad');
+  out['a town with a comma in its name is read'] = (await nameOfPlace({ latitude: 31.34, longitude: 104.22 })).endsWith('China');
+  out['the country is spelled out'] = (await nameOfPlace({ latitude: 48.85, longitude: 2.35 })).endsWith('France');
   out['the way out uses the heading'] = exitDirection({ dx: 0, dy: -5 }, 90) === 'east' && exitDirection({ dx: 0, dy: -5 }, null) === 'towards the top of the picture';
   const log = parseFlightLog('1\\n00:00:01,000 --> 00:00:02,000\\n[latitude: 33.123456] [longitude: 73.654321] [rel_alt: 42.5 abs_alt: 600.1] [gb_yaw: 12.5 gb_pitch: -60]\\n\\n2\\n00:00:02,000 --> 00:00:03,000\\nGPS (33.5, 73.5, 18) H 30.0M\\n');
   out['newer flight logs are read'] = log[0].latitude === 33.123456 && log[0].height === 42.5 && log[0].heading === 12.5 && log[0].tilt === 30 && log[0].t === 1;
@@ -170,9 +157,9 @@ async def run(url, video, out):
             checks["an alert shows without a click"] = await page.js("!document.getElementById('report').hidden")
             checks["it never claims officials were told"] = await page.js(f"!/has been sent to|officials have|help is coming|help is on its way/i.test({wording})")
             checks["it says nobody has been told"] = await page.js(f"/nobody has been told/.test({wording})")
-            checks["a missing location says so once"] = await page.js("/no location in it/.test(document.getElementById('location-text').textContent) && !document.getElementById('people').innerText.includes('Coordinates')")
+            checks["an unknown area says so once"] = await page.js("/Main area: not known/.test(document.getElementById('location-text').textContent)")
             checks["the page never asks where it was filmed"] = await page.js("!document.querySelector('#results input:not(#seek), #results form')")
-            checks["a report with no location cannot be sent"] = await page.js("document.getElementById('report-actions').hidden")
+            checks["nothing can be sent from the page"] = await page.js("!document.querySelector('a[href*=\"wa.me\"]') && !document.getElementById('report-send')")
 
         sent = [e["params"]["request"] for e in page.events if e.get("method") == "Network.requestWillBeSent"]
         posts = [r for r in sent if r["method"] not in ("GET", "HEAD", "OPTIONS")]
@@ -190,10 +177,8 @@ async def run(url, video, out):
         if found:
             await page.wait("document.getElementById('working').hidden", LIMIT_SECONDS)
             await asyncio.sleep(1.5)
-            checks["a video with a location can be sent"] = await page.js("!document.getElementById('report-actions').hidden && document.getElementById('report-send').href.startsWith('https://wa.me/?text=DroneSight')")
-            checks["every red person gets its coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => e.innerText.includes('33.684400, 73.047900'))")
-            checks["the report carries the coordinates and their source"] = await page.js("(() => { const text = decodeURIComponent(document.getElementById('report-send').href); return text.includes('33.684400, 73.047900') && text.includes('the video file'); })()")
-            checks["each person links to the map"] = await page.js("document.querySelector('.person a')?.href.startsWith('https://www.google.com/maps?q=')")
+            checks["a video with a location names its main area"] = await page.js("/Main area: near .*Islamabad/.test(document.getElementById('location-text').textContent)")
+            checks["no coordinates are shown"] = await page.js("!/\\d+\\.\\d{3,}/.test(document.getElementById('results').innerText)")
             await page.shot(Path(out) / "located.png")
         await page.call("Emulation.setDeviceMetricsOverride", width=390, height=844, deviceScaleFactor=2, mobile=True)
         await asyncio.sleep(1)

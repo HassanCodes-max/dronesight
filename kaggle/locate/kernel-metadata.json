@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-guess-region",
+  "title": "DroneSight Guess Region",
+  "code_file": "guess_region.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["mariannaesposito/heridal-4k", "hassanagddsbdxfg/dronesight-location-frames"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

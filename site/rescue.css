@@ -41,8 +41,6 @@
 
 .report { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 12px 16px; background: var(--panel); border-left: 4px solid var(--critical); border-radius: 8px; }
 .report p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
-.report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.report-actions a { display: inline-flex; align-items: center; text-decoration: none; }
 
 .location-note { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
 .location-note p { margin: 0 0 8px; color: var(--muted); }
@@ -58,11 +56,6 @@
 .person-pick .place { grid-row: span 2; align-self: start; color: #fff; font-size: 15px; font-weight: 700; text-align: center; background: var(--critical); border-radius: 4px; }
 .person-pick strong { font-size: 15px; }
 .person-pick .why { color: var(--muted); font-size: 14px; }
-.details { padding: 0 12px 12px 12px; font-size: 14px; }
-.details p { margin: 6px 0 0; }
-.details .quiet-text { color: var(--muted); }
-.details a { color: var(--text); }
-.details button { padding: 0; color: var(--accent); font-size: 14px; text-decoration: underline; background: none; border: 0; }
 
 
 @media (max-width: 900px) {

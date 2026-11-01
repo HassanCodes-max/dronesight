@@ -1,12 +1,8 @@
-// Ranks people by danger and turns picture positions into map positions.
+// Ranks people by danger and names the area a video was filmed in.
 //
 // The ranking is rules, not a trained model, because no dataset labels who is really at risk, and a
 // rescue team must be able to see why someone ranked first. It is a research prototype: the weights
 // are reasoned choices that have not been validated by emergency responders.
-const METRES_PER_DEGREE = 111320;
-const GPS_ERROR_M = 5;  // typical consumer drone GPS
-const ANGLE_ERROR_DEGREES = 3;  // how far the entered tilt and heading may be from the truth
-const LAST_USABLE_DEGREES = 80;  // nearer the horizon, one pixel covers too much ground to trust
 
 const HAZARD_POINTS = { fire: 65, "flood water": 45, smoke: 10 };  // smoke boxes are coarse, so smoke alone never counts
 const DEEP_POINTS = 20;  // someone far from safe ground cannot simply walk out
@@ -58,33 +54,6 @@ export function assess(person) {
 // Most urgent first. Ties go to whoever is furthest from safety.
 export const rank = (people) => people.map(assess).sort((a, b) => b.score - a.score || b.depthM - a.depthM || a.id - b.id);
 
-// Where a picture point is on the ground, assuming flat ground. Tilt is 0 for straight down.
-export function locate(x, y, drone, aspect) {
-  const across = Math.tan(radians(drone.fov) / 2);
-  const up = (0.5 - y) * 2 * (across / aspect);
-  const fromCentre = Math.atan(up);
-  const angle = radians(drone.tilt) + fromCentre;
-  if (angle >= radians(LAST_USABLE_DEGREES)) return null;
-  const forward = drone.height * Math.tan(angle);
-  const right = (x - 0.5) * 2 * across * (drone.height / Math.cos(angle)) * Math.cos(fromCentre);
-  const heading = radians(drone.heading);
-  const north = forward * Math.cos(heading) - right * Math.sin(heading);
-  const east = forward * Math.sin(heading) + right * Math.cos(heading);
-  const slip = drone.height * (Math.tan(angle + radians(ANGLE_ERROR_DEGREES)) - Math.tan(angle));
-  const turn = Math.hypot(forward, right) * radians(ANGLE_ERROR_DEGREES);
-  return {
-    latitude: drone.latitude + north / METRES_PER_DEGREE,
-    longitude: drone.longitude + east / (METRES_PER_DEGREE * Math.cos(radians(drone.latitude))),
-    errorM: Math.round(Math.hypot(GPS_ERROR_M, slip, turn)),
-  };
-}
-
-export function between(from, to) {
-  const north = (to.latitude - from.latitude) * METRES_PER_DEGREE;
-  const east = (to.longitude - from.longitude) * METRES_PER_DEGREE * Math.cos(radians(from.latitude));
-  return { metres: Math.round(Math.hypot(north, east)), direction: compass(Math.atan2(east, north)) };
-}
-
 export const compass = (angle) => COMPASS[Math.round((((angle * 180) / Math.PI + 360) % 360) / 45) % 8];
 
 // The way out, as a compass direction when the heading is known, or as a direction in the picture.
@@ -93,6 +62,28 @@ export function exitDirection({ dx, dy }, heading) {
   const across = Math.abs(dx) * 2 < Math.abs(dy) ? "" : dx > 0 ? "right" : "left";
   const down = Math.abs(dy) * 2 < Math.abs(dx) ? "" : dy > 0 ? "bottom" : "top";
   return `towards the ${[down, across].filter(Boolean).join(" ")} of the picture`;
+}
+
+const PLACES = "places.csv";
+
+// The nearest listed town, found on this device, so naming a place sends nothing anywhere. Commas in a
+// town's name are quoted in the file, and the first two fields are always numbers.
+export async function nameOfPlace({ latitude, longitude }) {
+  const list = await (await fetch(PLACES)).text();
+  const squash = Math.cos(radians(latitude));
+  let best = null;
+  let shortest = Infinity;
+  for (const line of list.split("\n")) {
+    const [lat, lon] = line.split(",", 2).map(Number);
+    const away = (lat - latitude) ** 2 + ((lon - longitude) * squash) ** 2;
+    if (away < shortest) {
+      shortest = away;
+      best = line;
+    }
+  }
+  const [, , town, region, country] = best.match(/(?:^|,)("(?:[^"]|"")*"|[^,]*)/g).map((field) => field.replace(/^,/, "").replace(/^"|"$/g, ""));
+  const nation = new Intl.DisplayNames(["en"], { type: "region" }).of(country);
+  return `near ${[town, region, nation].filter(Boolean).filter((part, i, parts) => part !== parts[i - 1]).join(", ")}`;
 }
 
 const LOCATION_MARKERS = ["©xyz", "location.ISO6709"];

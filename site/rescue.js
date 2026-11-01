@@ -1,20 +1,16 @@
 // The whole page: add a video, see who needs help and where. Red boxes are numbered, the rest are black.
 // All text from the file or the visitor goes through textContent, never innerHTML.
 import { analyse, prepare } from "./local.js";
-import { exitDirection, locate, parseFlightLog, readVideoLocation } from "./risk.js";
+import { exitDirection, nameOfPlace, parseFlightLog, readVideoLocation } from "./risk.js";
 import { boxAt } from "./tracker.js";
 
 const $ = (id) => document.getElementById(id);
-const DEFAULT_FOV = 84;  // most consumer drone cameras
-const MAX_IN_REPORT = 10;  // a WhatsApp link has to stay short
 const WAY_SECONDS = 3;  // the arrow stays near the moment it was measured, because the drone moves on
 const MASK_SECONDS = 1;
 const SHORT_ARROW = 45;
 const RED = "#ff2d20";
 const WAY_COLOUR = "#4dffa6";
 const NUMBER_HEIGHT = 18;
-// Someone in a real emergency could stop trying if a page said help was coming, so this never says so.
-const NOT_TOLD = "A live system would share each numbered person's location with officials and send help. This demo is not connected to officials, so nobody has been told and no help is on the way. Call your local emergency services.";
 
 const player = $("player");
 let videoUrl = null;
@@ -23,67 +19,25 @@ let live = null;  // what the check has found at the moment it is looking at
 let listed = [];  // only the people who need help, numbered
 let chosen = null;
 let flightLog = [];
-let area = null;  // a rough place for the whole video, from its file
+let area = null;  // the main area the video was filmed in, by name
 
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-const coordinates = ({ latitude, longitude }) => `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 const capital = (text) => text[0].toUpperCase() + text.slice(1);
 
 function show(section) {
   for (const id of ["start", "results"]) $(id).hidden = id !== section;
 }
 
-function droneAt(time) {
-  if (!flightLog.length) return null;
-  const entry = flightLog.reduce((best, item) => (Math.abs(item.t - time) < Math.abs(best.t - time) ? item : best));
-  return { fov: DEFAULT_FOV, ...entry, heading: entry.heading ?? 0, tilt: entry.tilt ?? 0 };
-}
-
-// A person's own spot needs the drone's height and direction. Without them there is only an area.
-function whereIs(person) {
-  const position = droneAt(person.t);
-  return position?.height ? locate(person.feet[0], person.feet[1], position, index.aspect) : null;
-}
-
-function placeText(person) {
-  const place = whereIs(person);
-  if (place) return `Location: ${coordinates(place)}, an estimate, within about ${place.errorM} m.`;
-  return area ? `Coordinates: ${coordinates(area)}, from ${area.source}. This is the area, not this person's exact spot.` : null;
-}
-
-const mapsLink = ({ latitude, longitude }) => `https://www.google.com/maps?q=${latitude},${longitude}`;
+const heading = () => flightLog[0]?.heading ?? null;
 
 function wayText(person) {
   if (!person.exit || person.exitM < 1) return null;
-  return `Quickest way out: about ${Math.round(person.exitM)} m ${exitDirection(person.exit, droneAt(person.t)?.heading ?? null)}, in a straight line. Check the route first.`;
-}
-
-function reportText() {
-  const lines = [`DroneSight report from a drone video. Found by software and not checked by a person.`,
-    `${count(listed.length, "person needs", "people need")} help.`];
-  if (area && !listed.some(whereIs)) lines.push(`Coordinates are from ${area.source}. They show the area, not each person's exact spot.`);
-  for (const person of listed.slice(0, MAX_IN_REPORT)) {
-    const place = whereIs(person) ?? area;
-    lines.push(`${person.place}. ${capital(person.reasons.join(", "))}. ${place ? `Location ${coordinates(place)}` : "Location unknown"}. Seen at ${clock(person.t)} in the video.`);
-  }
-  if (listed.length > MAX_IN_REPORT) lines.push(`And ${listed.length - MAX_IN_REPORT} more.`);
-  return lines.join("\n");
-}
-
-// A report with no location cannot help anyone reach a person, so it cannot be sent.
-function renderReport() {
-  const located = Boolean(area) || listed.some(whereIs);
-  $("report").hidden = !listed.length;
-  $("report-actions").hidden = !located;
-  if (listed.length && located) $("report-send").href = `https://wa.me/?text=${encodeURIComponent(reportText())}`;
+  return `Quickest way out: about ${Math.round(person.exitM)} m ${exitDirection(person.exit, heading())}, in a straight line. Check the route first.`;
 }
 
 function renderLocationNote() {
-  $("location-note").hidden = listed.some(whereIs);
-  $("location-text").textContent = area
-    ? `Location: ${coordinates(area)}, from ${area.source}. Each person's own spot needs a flight log.`
-    : "This video has no location in it, so there is nothing to send.";
+  $("location-text").textContent = area ? `Main area: ${area.name}.` : "Main area: not known. This video has no location in it.";
 }
 
 function card(person) {
@@ -111,26 +65,7 @@ function card(person) {
     pick.append(line);
   }
   pick.addEventListener("click", () => choose(person));
-  const details = document.createElement("div");
-  details.className = "details";
-  const location = placeText(person);
-  if (location) {
-    const line = document.createElement("p");
-    line.textContent = location;
-    details.append(line);
-  }
-  const place = whereIs(person) ?? area;
-  if (place) {
-    const link = document.createElement("a");
-    link.href = mapsLink(place);
-    link.rel = "noopener noreferrer";
-    link.target = "_blank";
-    link.textContent = "Open in Google Maps";
-    const line = document.createElement("p");
-    line.append(link);
-    details.append(line);
-  }
-  item.append(pick, details);
+  item.append(pick);
   return item;
 }
 
@@ -142,7 +77,6 @@ function renderPeople() {
 
 function refresh() {
   renderLocationNote();
-  renderReport();
   renderPeople();
 }
 
@@ -283,11 +217,11 @@ function showResults(found) {
   listed = index.people.filter((person) => person.critical).map((person, i) => Object.assign(person, { place: i + 1 }));
   chosen = null;
   const seen = count(index.tracks.length, "person", "people");
+  $("report").hidden = !listed.length;
   $("headline").textContent = listed.length ? `${count(listed.length, "person needs", "people need")} help` : "Nobody in danger was found";
   $("subhead").textContent = listed.length
     ? `Out of about ${seen} in the video.${index.hazardFound.tooDark ? " The video is too dark to judge water, so only fire was checked." : ""}`
     : `About ${seen} in the video. ${hazardsSeen()} The software can miss people, and it cannot recognise fights or attacks.`;
-  $("report-note").textContent = NOT_TOLD;
   setChecking(false);
   refresh();
   if (listed.length) {
@@ -307,14 +241,14 @@ async function check(file) {
   $("headline").textContent = "Checking your video";
   $("subhead").textContent = "Boxes appear as each moment is checked. The numbered list comes at the end.";
   $("bar").removeAttribute("value");
+  $("report").hidden = true;
   setChecking(true);
-  renderReport();
   renderPeople();
   show("results");
   player.src = videoUrl;
   try {
-    const place = await readVideoLocation(file);
-    area = place ? { ...place, source: "the video file" } : null;
+    const place = flightLog[0] ?? await readVideoLocation(file);
+    area = place ? { name: await nameOfPlace(place) } : null;
     showResults(await analyse(player, (progress, message) => {
       if (progress) $("bar").value = progress;
       $("working-note").textContent = message;
@@ -357,14 +291,6 @@ drop.addEventListener("drop", (event) => {
   event.preventDefault();
   drop.classList.remove("over");
   if (event.dataTransfer.files[0]) check(event.dataTransfer.files[0]);
-});
-
-$("report-send").addEventListener("click", () => {
-  $("report-note").textContent = "WhatsApp opened. Nothing is sent until you choose who gets it and press send there.";
-});
-$("report-copy").addEventListener("click", async () => {
-  await navigator.clipboard.writeText(reportText()).catch(() => {});
-  $("report-note").textContent = "Report copied. Nobody has been told until you send it.";
 });
 
 const togglePlay = () => {
