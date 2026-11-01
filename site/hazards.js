@@ -296,9 +296,6 @@ function personAt(track, box, frame, fields, name, everyone) {
 
 const hasHazard = ({ mask }) => mask.reduce((sum, cell) => sum + cell, 0) / mask.length >= MIN_HAZARD_SHARE;
 
-// A first look while the check runs: only whether the feet are in the water or fire of this moment.
-export const standsIn = (box, frame) => box[3] < FEET_OUT_OF_VIEW && ["flood", "fire"].some((kind) => hasHazard(frame[kind]) && frame[kind].mask[feetCell(box, frame[kind])]);
-
 export const hazardSeen = (frames, kind) => frames.some((frame) => hasHazard(frame[kind]));
 export const tooDarkForWater = (frames) => frames.some((frame) => frame.flood.dark);
 

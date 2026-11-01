@@ -125,14 +125,14 @@ async def run(url, video, out):
         started = time.perf_counter()
         await add_video()
         checks["progress shows"] = await page.wait("document.getElementById('working').offsetHeight > 0", 10)
-        checks["the video shows within 5 seconds"] = await page.wait("document.getElementById('player').readyState >= 2", 5)
-        print("video showing after", round(time.perf_counter() - started, 1), "s", flush=True)
         await asyncio.sleep(1)
+        checks["only the status shows during the check"] = await page.js("document.getElementById('result-grid').offsetHeight === 0 && document.getElementById('report').hidden")
         await page.shot(Path(out) / "working.png")
         checks["analysis finishes"] = await page.wait("document.getElementById('working').hidden", LIMIT_SECONDS)
         print("finished after", round(time.perf_counter() - started), "s:", await page.js("document.getElementById('headline').textContent"), "|",
               await page.js("document.getElementById('subhead').textContent"), "| error:",
               await page.js("document.getElementById('start-error').textContent"), flush=True)
+        checks["the video appears when the check is done"] = await page.js("document.getElementById('player').offsetHeight > 0")
         checks["the answer comes first"] = await page.js("document.getElementById('headline').textContent.length > 5")
         await asyncio.sleep(1.5)
         found = await page.js("document.querySelectorAll('.person').length")

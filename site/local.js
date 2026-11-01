@@ -1,5 +1,5 @@
 // Finds and follows people in a visitor's video on their own device, so the file never leaves it.
-import { HAZARD_MODELS, dropFalseWater, hazardFrame, hazardSeen, hazardViews, judge, maskPicture, modelView, standsIn, steadyFlames, toTensor, tooDarkForWater } from "./hazards.js";
+import { HAZARD_MODELS, dropFalseWater, hazardFrame, hazardSeen, hazardViews, judge, maskPicture, modelView, steadyFlames, toTensor, tooDarkForWater } from "./hazards.js";
 import { Tracker, cameraShift } from "./tracker.js";
 
 const MODEL = "person.onnx";
@@ -22,7 +22,7 @@ const HEAVY_SECONDS = 1;
 const LONG_VIDEO_HEAVY_SECONDS = 2;
 const TIME_BUDGET_SECONDS = 60;
 const DOWNLOAD_MB = 100;  // all the models and the runtime together
-const SHOWN_SCORE = 0.25;  // boxes shown during the check: weaker ones only help follow a person
+const SURE_SCORE = 0.25;  // weaker boxes only help follow a person
 const STANDARD_VIDEO = [1920, 1080];  // the shape the models are warmed up on
 const FRAMES_BEFORE_CHOOSING = 4;  // an even number, so light and heavy samples are measured equally
 const THUMBNAIL_WIDTH = 192;
@@ -39,7 +39,7 @@ function iou(a, b) {
 const area = ([x1, y1, x2, y2]) => (x2 - x1) * (y2 - y1);
 
 function isPartOf(part, whole) {
-  if (whole.score < SHOWN_SCORE || area(part.box) >= area(whole.box) || area(part.box) < PART_SIZE * area(whole.box)) return false;
+  if (whole.score < SURE_SCORE || area(part.box) >= area(whole.box) || area(part.box) < PART_SIZE * area(whole.box)) return false;
   const width = Math.min(part.box[2], whole.box[2]) - Math.max(part.box[0], whole.box[0]);
   const height = Math.min(part.box[3], whole.box[3]) - Math.max(part.box[1], whole.box[1]);
   return width > 0 && height > 0 && width * height >= PART_INSIDE * area(part.box);
@@ -208,8 +208,7 @@ function toIndex(tracks, duration, width, height) {
   return { duration, samples, tracks: scaled, reach: 1 };
 }
 
-// Walks the visitor's own player through the video, so they watch each moment being checked.
-export async function analyse(video, onProgress, onLook) {
+export async function analyse(video, onProgress) {
   await canPlay(video);
   const { duration, videoWidth, videoHeight } = video;
   if (duration > MAX_SECONDS) throw new Error("Please choose a video of up to 3 minutes.");
@@ -240,12 +239,8 @@ export async function analyse(video, onProgress, onLook) {
     previous = grey;
     tracker.update(time, found, { x: shift.x * toVideoPixels, y: shift.y * toVideoPixels });
     if (heavy) {
-      const hazard = await hazardFrame(ort, hazardSessions, video, time, views);
-      hazards.push(hazard);
+      hazards.push(await hazardFrame(ort, hazardSessions, video, time, views));
       nextHeavy = time + heavySeconds;
-      dropFalseWater([hazard]);
-      const boxes = found.filter(({ score }) => score >= SHOWN_SCORE).map(({ box: [x1, y1, x2, y2] }) => [x1 / videoWidth, y1 / videoHeight, x2 / videoWidth, y2 / videoHeight]);
-      onLook({ t: time, masks: pictures(hazard), people: boxes.map((box) => ({ box, danger: standsIn(box, hazard) })) });
     }
     done += 1;
     if (done === 1) started = performance.now();  // the first frame sets up the model, so it says little about the rest

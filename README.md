@@ -53,7 +53,7 @@ A report you can copy or open in WhatsApp
 
 A smaller 960 model was tried first for speed. Its test recall looked close, at 37% against 44% on VisDrone, but on that real video it found only 9 to 24 people per frame against the full model's 55 to 118, so it was dropped.
 
-**Speed.** Nothing is uploaded, so the video shows at once and the check walks through it on screen, drawing boxes as each moment is read. On the development laptop's Intel graphics the main people model took 1.35 s a frame, and the water and fire models about 0.3 s each, but profiling a 20-second video showed time going to three avoidable places:
+**Speed.** Nothing is uploaded, so adding a video only starts the check on the visitor's device. The page shows a status bar, and the video appears with its results when the check is done. On the development laptop's Intel graphics the main people model took 1.35 s a frame, and the water and fire models about 0.3 s each, but profiling a 20-second video showed time going to three avoidable places:
 
 | Where the time went | Fix |
 |---|---|
@@ -68,7 +68,7 @@ A smaller 960 model was tried first for speed. Its test recall looked close, at 
 | 29 s park video | 93 s | 74 s |
 | 16 s fire clip | 70 s | 44 s |
 
-Reading the main model once a second first dropped a man who stands in plain view on a roof, because tracks broke. Keeping the cheap samples at twice a second brought him back, and that is why the design has two speeds. Videos that would take over a minute read the slow models every 2 seconds. Models saved by an earlier visit are made ready as the page opens, so the first boxes appear in about 1.5 seconds. On a first visit that takes about 15 seconds, plus the download of about 100 MB, which then stays in the browser. A first visit downloads nothing until a video is added, to protect phone data.
+Reading the main model once a second first dropped a man who stands in plain view on a roof, because tracks broke. Keeping the cheap samples at twice a second brought him back, and that is why the design has two speeds. Videos that would take over a minute read the slow models every 2 seconds. Models saved by an earlier visit are made ready as the page opens, which saves about 15 seconds. A first visit also has the download of about 100 MB, which then stays in the browser. A first visit downloads nothing until a video is added, to protect phone data.
 
 Two ways to go faster were tested and rejected. 8-bit weights would halve the download, but on real frames one went from 8 people found to 12 and water outlines agreed only 88%, so the models stay at 16-bit. `deploy/shrink_models.py` halved them that way; on real frames the same people were found, scores moved by under 0.001, and water outlines agreed 99.96%. The 960 model is faster but finds far fewer people, as above. Only the runtime is compressed, from 29 MB to 7 MB, because the models barely shrink.
 

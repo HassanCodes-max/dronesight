@@ -15,7 +15,6 @@ const NUMBER_HEIGHT = 18;
 const player = $("player");
 let videoUrl = null;
 let index = null;
-let live = null;  // what the check has found at the moment it is looking at
 let listed = [];  // only the people who need help, numbered
 let chosen = null;
 let flightLog = [];
@@ -149,27 +148,11 @@ function drawNumbered(ctx, x, y, w, h, person, { left, top }) {
   ctx.fillText(text, labelX + 5, labelY + 14);
 }
 
-// Plain red, because numbers are only given once the whole video has been judged.
-function drawLive(ctx, { left, top, width, height }) {
-  for (const picture of live.masks) ctx.drawImage(picture, left, top, width, height);
-  for (const { box, danger } of live.people) {
-    const [x, y, w, h] = [left + box[0] * width, top + box[1] * height, (box[2] - box[0]) * width, (box[3] - box[1]) * height];
-    if (danger) {
-      ctx.strokeStyle = RED;
-      ctx.lineWidth = 2.5;
-      ctx.strokeRect(x, y, w, h);
-    } else {
-      drawOrdinary(ctx, x, y, w, h);
-    }
-  }
-}
-
 function draw() {
   $("time").textContent = `${clock(player.currentTime)} / ${clock(player.duration || 0)}`;
   if (document.activeElement !== $("seek")) $("seek").value = player.currentTime;
   const view = fitted();
   const { ctx, left, top, width, height } = view;
-  if (live && player.videoWidth) drawLive(ctx, view);
   if (!index || !player.videoWidth) return;
   const distance = (mask) => Math.abs(mask.t - player.currentTime);
   const nearest = Math.min(MASK_SECONDS, ...index.masks.map(distance));  // flames move, so only one moment is shown
@@ -205,14 +188,12 @@ function hazardsSeen() {
 }
 
 function setChecking(checking) {
-  $("play").disabled = checking;
-  $("seek").disabled = checking;
+  $("result-grid").hidden = checking;
   $("working").hidden = !checking;
   $("again").hidden = checking;
 }
 
 function showResults(found) {
-  live = null;
   index = found;
   listed = index.people.filter((person) => person.critical).map((person, i) => Object.assign(person, { place: i + 1 }));
   chosen = null;
@@ -232,14 +213,14 @@ function showResults(found) {
   }
 }
 
-// Nothing is uploaded, so the video shows at once, and the check walks through it in front of the visitor.
+// Nothing is uploaded: the check runs here, on the hidden player, and the video appears when it is done.
 async function check(file) {
   $("start-error").textContent = "";
   flightLog = $("log").files[0] ? parseFlightLog(await $("log").files[0].text()) : [];
   videoUrl = URL.createObjectURL(file);
   listed = [];
   $("headline").textContent = "Checking your video";
-  $("subhead").textContent = "Boxes appear as each moment is checked. The numbered list comes at the end.";
+  $("subhead").textContent = "Your video will appear here when the check is done.";
   $("bar").removeAttribute("value");
   $("report").hidden = true;
   setChecking(true);
@@ -252,9 +233,6 @@ async function check(file) {
     showResults(await analyse(player, (progress, message) => {
       if (progress) $("bar").value = progress;
       $("working-note").textContent = message;
-    }, (look) => {
-      live = look;
-      draw();
     }));
   } catch (error) {
     startAgain();
@@ -263,7 +241,6 @@ async function check(file) {
 }
 
 function startAgain() {
-  live = null;
   setChecking(false);
   player.pause();
   player.removeAttribute("src");
@@ -293,11 +270,7 @@ drop.addEventListener("drop", (event) => {
   if (event.dataTransfer.files[0]) check(event.dataTransfer.files[0]);
 });
 
-const togglePlay = () => {
-  if (live || !$("working").hidden) return;
-  if (player.paused) player.play().catch(() => {});
-  else player.pause();
-};
+const togglePlay = () => (player.paused ? player.play().catch(() => {}) : player.pause());
 $("play").addEventListener("click", togglePlay);
 $("stage").addEventListener("click", togglePlay);
 $("seek").addEventListener("input", (event) => {

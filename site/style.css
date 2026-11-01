@@ -67,7 +67,6 @@ button { cursor: pointer; }
 }
 
 .control:hover { border-color: var(--muted); }
-.control:disabled { opacity: 0.5; cursor: default; }
 
 main { max-width: 1320px; margin: 0 auto; padding: 0 24px 40px; }
 
