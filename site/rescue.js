@@ -13,7 +13,6 @@ const SHORT_ARROW = 45;
 const RED = "#ff2d20";
 const WAY_COLOUR = "#4dffa6";
 const NUMBER_HEIGHT = 18;
-const LOCATION_TIMEOUT_MS = 15000;
 // Someone in a real emergency could stop trying if a page said help was coming, so this never says so.
 const NOT_TOLD = "A live system would share each numbered person's location with officials and send help. This demo is not connected to officials, so nobody has been told and no help is on the way. Call your local emergency services.";
 
@@ -24,7 +23,7 @@ let live = null;  // what the check has found at the moment it is looking at
 let listed = [];  // only the people who need help, numbered
 let chosen = null;
 let flightLog = [];
-let area = null;  // a rough place for the whole video: from its file or the device sending the report
+let area = null;  // a rough place for the whole video, from its file
 
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -72,16 +71,19 @@ function reportText() {
   return lines.join("\n");
 }
 
+// A report with no location cannot help anyone reach a person, so it cannot be sent.
 function renderReport() {
+  const located = Boolean(area) || listed.some(whereIs);
   $("report").hidden = !listed.length;
-  if (listed.length) $("report-send").href = `https://wa.me/?text=${encodeURIComponent(reportText())}`;
+  $("report-actions").hidden = !located;
+  if (listed.length && located) $("report-send").href = `https://wa.me/?text=${encodeURIComponent(reportText())}`;
 }
 
 function renderLocationNote() {
   $("location-note").hidden = listed.some(whereIs);
   $("location-text").textContent = area
     ? `Location: ${coordinates(area)}, from ${area.source}. Each person's own spot needs a flight log.`
-    : "This video has no location in it. Send on WhatsApp adds your device's location to the report, if you allow it.";
+    : "This video has no location in it, so there is nothing to send.";
 }
 
 function card(person) {
@@ -357,42 +359,12 @@ drop.addEventListener("drop", (event) => {
   if (event.dataTransfer.files[0]) check(event.dataTransfer.files[0]);
 });
 
-// Only ever asked for after a click, and the browser asks the visitor's permission too. These are real
-// coordinates of the device, so the report says so. With no location at all it says unknown, never a guess.
-function addDeviceLocation() {
-  $("report-note").textContent = "Asking your device for its location.";
-  return new Promise((resolve) => {
-    navigator.geolocation?.getCurrentPosition(({ coords }) => {
-      area = { latitude: coords.latitude, longitude: coords.longitude, source: "the device that sent this report" };
-      refresh();
-      resolve();
-    }, resolve, { timeout: LOCATION_TIMEOUT_MS });
-    if (!navigator.geolocation) resolve();
-  });
-}
-
-const needsLocation = () => !area && !listed.some(whereIs);
-const SHARED_NOTE = "Nothing is sent until you choose who gets it and press send there.";
-const NO_LOCATION_NOTE = "Your device's location was not shared, so the report says location unknown.";
-
-$("report-send").addEventListener("click", async (event) => {
-  if (needsLocation()) {
-    event.preventDefault();
-    const tab = window.open("about:blank");  // opened now, because browsers block a window opened after a wait
-    await addDeviceLocation();
-    if (!tab) {
-      $("report-note").textContent = "Press Send on WhatsApp again to open it.";
-      return;
-    }
-    tab.opener = null;
-    tab.location = $("report-send").href;
-  }
-  $("report-note").textContent = `WhatsApp opened. ${SHARED_NOTE}${needsLocation() ? ` ${NO_LOCATION_NOTE}` : ""}`;
+$("report-send").addEventListener("click", () => {
+  $("report-note").textContent = "WhatsApp opened. Nothing is sent until you choose who gets it and press send there.";
 });
 $("report-copy").addEventListener("click", async () => {
-  if (needsLocation()) await addDeviceLocation();
   await navigator.clipboard.writeText(reportText()).catch(() => {});
-  $("report-note").textContent = `Report copied. Nobody has been told until you send it.${needsLocation() ? ` ${NO_LOCATION_NOTE}` : ""}`;
+  $("report-note").textContent = "Report copied. Nobody has been told until you send it.";
 });
 
 const togglePlay = () => {

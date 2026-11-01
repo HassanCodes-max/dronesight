@@ -24,7 +24,7 @@ U-Net for water and YOLO11s plus flame colour for fire, every second, on every v
    |
 risk.js: marks each person red or black at their worst moment, with reasons
    |
-The video file's own location tag, a DJI .SRT log, or the sending device: turn people into coordinates
+The video file's own location tag or a DJI .SRT log: turn people into coordinates
    |
 A report you can copy or open in WhatsApp
 ```
@@ -37,7 +37,7 @@ A report you can copy or open in WhatsApp
 
 **Lying still** is flagged from the track: a box wider than tall that stays put for 4 seconds. It is the only sign of someone hurt away from water or fire, and it will miss people and raise false alarms. No model here recognises cliffs or falls.
 
-**Location** is never typed in. A normal video has no GPS, so coordinates come from the first of these that exists: a DJI .SRT log, which gives each person their own spot with an error range; the location tag many phone videos carry; or, when someone presses Send on WhatsApp, their own device, with its permission. The last two are the area, not each person's spot, and the report says which it was. With none of them the report says location unknown, because a made-up coordinate could send a team to the wrong place.
+**Location** is never typed in and never guessed. A normal video has no GPS, so coordinates come from a DJI .SRT log, which gives each person their own spot with an error range, or from the location tag many phone videos carry, which gives the area. A report can only be sent when one of these exists, because a report with no location cannot help anyone reach a person.
 
 **The shortcut** is the straight line to the nearest safe ground, measured on the hazard mask, and it does not know whether a route is passable.
 
@@ -213,7 +213,7 @@ The source code is under the MIT licence. The people and fire models were made w
 
 ## Update log
 
-- Added a second people model, a cleaner water outline, a water check every second, half-size model files and location from the device, after tests on real flood videos showed the first versions failing.
+- Added a second people model, a cleaner water outline, a water check every second, half-size model files and automatic location, after tests on real flood videos showed the first versions failing.
 - Made the video appear at once, with the check running while it plays, and removed the retired simulation, server and assistant code. They remain in the git history.
 - Made the result binary: red numbered boxes for anyone in water, in fire, beside flames or lying still and alone, black boxes for everyone else, and a list that explains only the numbered people.
 - Rebuilt the page around one job: add a video and see who needs help first. Water and fire are now checked on every video, so there is nothing to choose, and the language model was replaced by messages written from the measurements. On a real, calm park video with about 186 people it raised no false alarms.

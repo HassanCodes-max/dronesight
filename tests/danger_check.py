@@ -127,10 +127,13 @@ async def run(url, video, out):
         checks.update(json.loads(await page.js(RULES)))
         checks.update(json.loads(await page.js(MAP)))
 
-        async def add_video():
+        async def add_video(path=video):
             root = (await page.call("DOM.getDocument"))["root"]["nodeId"]
             node = (await page.call("DOM.querySelector", nodeId=root, selector="#file"))["nodeId"]
-            await page.call("DOM.setFileInputFiles", nodeId=node, files=[str(Path(video).resolve())])
+            await page.call("DOM.setFileInputFiles", nodeId=node, files=[str(Path(path).resolve())])
+
+        tagged = Path(out) / f"tagged{Path(video).suffix}"
+        tagged.write_bytes(Path(video).read_bytes() + b"\xa9xyz+33.6844+073.0479/")  # as a phone stores it
 
         started = time.perf_counter()
         await add_video()
@@ -167,17 +170,9 @@ async def run(url, video, out):
             checks["an alert shows without a click"] = await page.js("!document.getElementById('report').hidden")
             checks["it never claims officials were told"] = await page.js(f"!/has been sent to|officials have|help is coming|help is on its way/i.test({wording})")
             checks["it says nobody has been told"] = await page.js(f"/nobody has been told/.test({wording})")
-            checks["the WhatsApp link holds the report"] = await page.js("document.getElementById('report-send').href.startsWith('https://wa.me/?text=DroneSight')")
             checks["a missing location says so once"] = await page.js("/no location in it/.test(document.getElementById('location-text').textContent) && !document.getElementById('people').innerText.includes('Coordinates')")
             checks["the page never asks where it was filmed"] = await page.js("!document.querySelector('#results input:not(#seek), #results form')")
-            await page.call("Browser.grantPermissions", permissions=["geolocation"], origin=url)
-            await page.call("Emulation.setGeolocationOverride", latitude=33.6844, longitude=73.0479, accuracy=20)
-            await page.js("document.getElementById('report-send').click()")
-            checks["sharing adds the device's location by itself"] = await page.wait("document.getElementById('report-send').href.includes(encodeURIComponent('33.684400, 73.047900'))", 20)
-            checks["every red person gets coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => e.innerText.includes('33.684400, 73.047900'))")
-            checks["the report says where the coordinates came from"] = await page.js("decodeURIComponent(document.getElementById('report-send').href).includes('the device that sent this report')")
-            checks["each person links to the map"] = await page.js("document.querySelector('.person a')?.href.startsWith('https://www.google.com/maps?q=')")
-            await page.shot(Path(out) / "located.png")
+            checks["a report with no location cannot be sent"] = await page.js("document.getElementById('report-actions').hidden")
 
         sent = [e["params"]["request"] for e in page.events if e.get("method") == "Network.requestWillBeSent"]
         posts = [r for r in sent if r["method"] not in ("GET", "HEAD", "OPTIONS")]
@@ -187,11 +182,19 @@ async def run(url, video, out):
         await page.js("document.getElementById('again').click()")
         checks["another video can be checked"] = await page.wait("document.getElementById('start').offsetHeight > 0", 5)
         before = len(page.events)
-        await add_video()
+        await add_video(tagged)
         await page.wait("/Checking on your/.test(document.getElementById('working-note').textContent)", 60)
         again = [e["params"]["request"]["url"] for e in page.events[before:] if e.get("method") == "Network.requestWillBeSent"]
         large = [u for u in again if u.endswith((".onnx", ".wasm")) or "xet" in u]
         checks["a second video downloads nothing big"] = not large
+        if found:
+            await page.wait("document.getElementById('working').hidden", LIMIT_SECONDS)
+            await asyncio.sleep(1.5)
+            checks["a video with a location can be sent"] = await page.js("!document.getElementById('report-actions').hidden && document.getElementById('report-send').href.startsWith('https://wa.me/?text=DroneSight')")
+            checks["every red person gets its coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => e.innerText.includes('33.684400, 73.047900'))")
+            checks["the report carries the coordinates and their source"] = await page.js("(() => { const text = decodeURIComponent(document.getElementById('report-send').href); return text.includes('33.684400, 73.047900') && text.includes('the video file'); })()")
+            checks["each person links to the map"] = await page.js("document.querySelector('.person a')?.href.startsWith('https://www.google.com/maps?q=')")
+            await page.shot(Path(out) / "located.png")
         await page.call("Emulation.setDeviceMetricsOverride", width=390, height=844, deviceScaleFactor=2, mobile=True)
         await asyncio.sleep(1)
         checks["mobile has no sideways scroll"] = await page.js("document.documentElement.scrollWidth <= window.innerWidth")
