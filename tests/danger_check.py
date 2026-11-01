@@ -78,7 +78,7 @@ RULES = """(async () => {
   return JSON.stringify(out);
 })()"""
 MAP = """(async () => {
-  const { between, exitDirection, locate, parseFlightLog, parsePlace, readVideoLocation } = await import('./risk.js');
+  const { between, exitDirection, locate, parseFlightLog, readVideoLocation } = await import('./risk.js');
   const drone = { latitude: 33.7, longitude: 73, height: 100, heading: 0, tilt: 0, fov: 90 };
   const north = (place) => (place.latitude - 33.7) * 111320;
   const east = (place) => (place.longitude - 73) * 111320 * Math.cos(33.7 * Math.PI / 180);
@@ -109,11 +109,6 @@ MAP = """(async () => {
   out['a location in the file is read'] = read?.latitude === 33.6844 && read?.longitude === 73.0479;
   out['a phone video location is read'] = (await readVideoLocation(apple))?.longitude === 151.2093;
   out['no location in the file gives none'] = (await readVideoLocation(plain)) === null;
-  out['typed coordinates are read'] = parsePlace(' 33.6844, 73.0479 ')?.longitude === 73.0479 && parsePlace('-33.8 151.2')?.latitude === -33.8;
-  out['a Google Maps link is read'] = parsePlace('https://www.google.com/maps/place/Isb/@33.6,73.0,15z/data=!3m1!4b1!4m6!3m5!1s0x38!8m2!3d33.6844!4d73.0479')?.latitude === 33.6844;
-  out['a Google Maps view link is read'] = parsePlace('https://www.google.com/maps/@33.6844,73.0479,15z')?.longitude === 73.0479;
-  out['a query link is read'] = parsePlace('https://maps.google.com/?q=33.6844,73.0479')?.latitude === 33.6844;
-  out['nonsense gives no place'] = parsePlace('Islamabad') === null && parsePlace('https://maps.app.goo.gl/abc123') === null && parsePlace('95, 200') === null;
   return JSON.stringify(out);
 })()"""
 
@@ -173,29 +168,15 @@ async def run(url, video, out):
             checks["it never claims officials were told"] = await page.js(f"!/has been sent to|officials have|help is coming|help is on its way/i.test({wording})")
             checks["it says nobody has been told"] = await page.js(f"/nobody has been told/.test({wording})")
             checks["the WhatsApp link holds the report"] = await page.js("document.getElementById('report-send').href.startsWith('https://wa.me/?text=DroneSight')")
-            checks["a missing location says so once"] = await page.js("/No location is known/.test(document.getElementById('location-text').textContent) && !document.getElementById('people').innerText.includes('Location')")
-            await page.js("document.getElementById('place').value = 'somewhere'; document.getElementById('place-form').requestSubmit()")
-            checks["a place with no coordinates is refused"] = await page.js("document.getElementById('place-error').textContent !== ''")
-            await page.js("document.getElementById('place').value = '33.6844, 73.0479'; document.getElementById('place-form').requestSubmit()")
-            checks["a typed place gives every red person coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => e.innerText.includes('33.684400, 73.047900'))")
-            checks["the report carries the coordinates"] = await page.js("decodeURIComponent(document.getElementById('report-send').href).includes('33.684400, 73.047900')")
-            await page.js("""document.getElementById('where').open = true;
-                document.getElementById('drone-lat').value = 'nonsense';
-                document.getElementById('drone-lon').value = '73';
-                document.getElementById('drone-height').value = '60';
-                document.getElementById('where-form').requestSubmit()""")
-            checks["bad numbers are refused"] = await page.js("document.getElementById('where-error').textContent !== ''")
-            await page.js("""document.getElementById('drone-lat').value = '33.6844';
-                document.getElementById('drone-lon').value = '73.0479';
-                document.getElementById('drone-height').value = '60';
-                document.getElementById('drone-heading').value = '45';
-                document.getElementById('team-lat').value = '33.6900';
-                document.getElementById('team-lon').value = '73.0500';
-                document.getElementById('where-form').requestSubmit()""")
-            await asyncio.sleep(0.5)
-            checks["everyone listed gets coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => /33\\.\\d+, 73\\.\\d+/.test(e.innerText))")
-            checks["the error range is shown"] = await page.js("/within about \\d+ m/.test(document.querySelector('.person').innerText)")
-            checks["directions link appears"] = await page.js("document.querySelector('.person a')?.href.startsWith('https://www.google.com/maps/dir/')")
+            checks["a missing location says so once"] = await page.js("/no location in it/.test(document.getElementById('location-text').textContent) && !document.getElementById('people').innerText.includes('Coordinates')")
+            checks["the page never asks where it was filmed"] = await page.js("!document.querySelector('#results input:not(#seek), #results form')")
+            await page.call("Browser.grantPermissions", permissions=["geolocation"], origin=url)
+            await page.call("Emulation.setGeolocationOverride", latitude=33.6844, longitude=73.0479, accuracy=20)
+            await page.js("document.getElementById('report-send').click()")
+            checks["sharing adds the device's location by itself"] = await page.wait("document.getElementById('report-send').href.includes(encodeURIComponent('33.684400, 73.047900'))", 20)
+            checks["every red person gets coordinates"] = await page.js("[...document.querySelectorAll('.person')].every((e) => e.innerText.includes('33.684400, 73.047900'))")
+            checks["the report says where the coordinates came from"] = await page.js("decodeURIComponent(document.getElementById('report-send').href).includes('the device that sent this report')")
+            checks["each person links to the map"] = await page.js("document.querySelector('.person a')?.href.startsWith('https://www.google.com/maps?q=')")
             await page.shot(Path(out) / "located.png")
 
         sent = [e["params"]["request"] for e in page.events if e.get("method") == "Network.requestWillBeSent"]

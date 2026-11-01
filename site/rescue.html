@@ -78,35 +78,9 @@
         <aside id="panel" class="people-panel" aria-label="People who need help">
           <div id="location-note" class="location-note">
             <p id="location-text"></p>
-            <form id="place-form" class="place-form">
-              <label for="place">Where was this filmed?</label>
-              <div>
-                <input id="place" placeholder="Google Maps link, or 33.6844, 73.0479" autocomplete="off">
-                <button class="primary" type="submit">Set</button>
-              </div>
-              <p id="place-error" class="error" role="alert"></p>
-            </form>
-            <button id="use-my-location" class="control" type="button">Use my current location</button>
           </div>
           <h2>What is happening</h2>
           <ol id="people" class="people"></ol>
-          <details id="where" class="where">
-            <summary>Enter the drone's details for each person's exact spot</summary>
-            <form id="where-form">
-              <p class="hint">These come from your flight app. Tilt is 0 for straight down.</p>
-              <div class="fields">
-                <label>Drone latitude <input id="drone-lat" inputmode="decimal" required></label>
-                <label>Drone longitude <input id="drone-lon" inputmode="decimal" required></label>
-                <label>Height, metres <input id="drone-height" inputmode="decimal" required></label>
-                <label>Heading, degrees <input id="drone-heading" inputmode="decimal" value="0"></label>
-                <label>Camera tilt, degrees <input id="drone-tilt" inputmode="decimal" value="0"></label>
-                <label>Your team's latitude <input id="team-lat" inputmode="decimal"></label>
-                <label>Your team's longitude <input id="team-lon" inputmode="decimal"></label>
-              </div>
-              <button class="primary" type="submit">Show exact spots</button>
-              <p id="where-error" class="error" role="alert"></p>
-            </form>
-          </details>
         </aside>
       </div>
     </section>

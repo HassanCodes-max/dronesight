@@ -45,16 +45,11 @@
 .report-actions a { display: inline-flex; align-items: center; text-decoration: none; }
 
 .location-note { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
-.place-form { display: grid; gap: 4px; margin-bottom: 8px; }
-.place-form label { font-weight: 600; }
-.place-form div { display: flex; gap: 8px; }
-.place-form input { flex: 1; min-width: 0; padding: 0 10px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
 .location-note p { margin: 0 0 8px; color: var(--muted); }
 .people-panel h2 + ol { margin-top: 8px; }
 
 .people-panel { padding: 16px; background: var(--panel); border-radius: var(--radius); }
 .people-panel h2 { margin: 0; font-size: 18px; }
-.hint { margin: 2px 0 10px; color: var(--muted); font-size: 14px; }
 .people { display: grid; gap: 8px; max-height: 60vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 
 .person { background: var(--panel-2); border-left: 4px solid var(--critical); border-radius: 8px; }
@@ -69,11 +64,6 @@
 .details a { color: var(--text); }
 .details button { padding: 0; color: var(--accent); font-size: 14px; text-decoration: underline; background: none; border: 0; }
 
-.where { margin-top: 12px; font-size: 14px; }
-.where summary { color: var(--accent); cursor: pointer; }
-.where .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
-.where label { display: grid; gap: 3px; color: var(--muted); font-size: 13px; }
-.where input { width: 100%; min-width: 0; padding: 7px 8px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; }
 
 @media (max-width: 900px) {
   .result-grid { grid-template-columns: minmax(0, 1fr); }

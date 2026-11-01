@@ -115,15 +115,6 @@ export async function readVideoLocation(file) {
   return null;
 }
 
-// Coordinates from typed text or a Google Maps link. The pin's !3d!4d comes before the map's centre.
-export function parsePlace(text) {
-  const found = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) ?? text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
-    ?? text.match(/[?&](?:q|query|ll|destination)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)/i) ?? text.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
-  if (!found) return null;
-  const [latitude, longitude] = [Number(found[1]), Number(found[2])];
-  return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? { latitude, longitude } : null;
-}
-
 // DJI flight logs differ by model, so each field is matched on its own. Times come from the subtitle's start.
 export function parseFlightLog(text) {
   const entries = [];

@@ -1,7 +1,7 @@
 // The whole page: add a video, see who needs help and where. Red boxes are numbered, the rest are black.
 // All text from the file or the visitor goes through textContent, never innerHTML.
 import { analyse, prepare } from "./local.js";
-import { exitDirection, locate, parseFlightLog, parsePlace, readVideoLocation } from "./risk.js";
+import { exitDirection, locate, parseFlightLog, readVideoLocation } from "./risk.js";
 import { boxAt } from "./tracker.js";
 
 const $ = (id) => document.getElementById(id);
@@ -23,10 +23,8 @@ let index = null;
 let live = null;  // what the check has found at the moment it is looking at
 let listed = [];  // only the people who need help, numbered
 let chosen = null;
-let drone = null;
-let team = null;
 let flightLog = [];
-let area = null;  // a rough place for the whole video: from its file or the visitor's device
+let area = null;  // a rough place for the whole video: from its file or the device sending the report
 
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -38,9 +36,9 @@ function show(section) {
 }
 
 function droneAt(time) {
-  if (!flightLog.length) return drone;
+  if (!flightLog.length) return null;
   const entry = flightLog.reduce((best, item) => (Math.abs(item.t - time) < Math.abs(best.t - time) ? item : best));
-  return { fov: DEFAULT_FOV, heading: entry.heading ?? 0, tilt: entry.tilt ?? 0, ...drone, ...entry, height: entry.height ?? drone?.height };
+  return { fov: DEFAULT_FOV, ...entry, heading: entry.heading ?? 0, tilt: entry.tilt ?? 0 };
 }
 
 // A person's own spot needs the drone's height and direction. Without them there is only an area.
@@ -52,12 +50,10 @@ function whereIs(person) {
 function placeText(person) {
   const place = whereIs(person);
   if (place) return `Location: ${coordinates(place)}, an estimate, within about ${place.errorM} m.`;
-  return area ? `Coordinates: ${coordinates(area)}, ${area.source}. This is the area, not this person's exact spot.` : null;
+  return area ? `Coordinates: ${coordinates(area)}, from ${area.source}. This is the area, not this person's exact spot.` : null;
 }
 
-const mapsLink = ({ latitude, longitude }) => (team
-  ? `https://www.google.com/maps/dir/?api=1&origin=${team.latitude},${team.longitude}&destination=${latitude},${longitude}&travelmode=walking`
-  : `https://www.google.com/maps?q=${latitude},${longitude}`);
+const mapsLink = ({ latitude, longitude }) => `https://www.google.com/maps?q=${latitude},${longitude}`;
 
 function wayText(person) {
   if (!person.exit || person.exitM < 1) return null;
@@ -67,6 +63,7 @@ function wayText(person) {
 function reportText() {
   const lines = [`DroneSight report from a drone video. Found by software and not checked by a person.`,
     `${count(listed.length, "person needs", "people need")} help.`];
+  if (area && !listed.some(whereIs)) lines.push(`Coordinates are from ${area.source}. They show the area, not each person's exact spot.`);
   for (const person of listed.slice(0, MAX_IN_REPORT)) {
     const place = whereIs(person) ?? area;
     lines.push(`${person.place}. ${capital(person.reasons.join(", "))}. ${place ? `Location ${coordinates(place)}` : "Location unknown"}. Seen at ${clock(person.t)} in the video.`);
@@ -81,12 +78,10 @@ function renderReport() {
 }
 
 function renderLocationNote() {
-  $("location-note").hidden = Boolean(drone || flightLog.length);
+  $("location-note").hidden = listed.some(whereIs);
   $("location-text").textContent = area
-    ? `Only the general area is known: ${coordinates(area)}, ${area.source}. Each person's own spot needs the drone's height and direction.`
-    : "No location is known yet, because a normal video has no GPS in it. Say where it was filmed and every red person gets coordinates.";
-  $("use-my-location").hidden = area !== null;
-  $("place-form").hidden = area !== null;
+    ? `Location: ${coordinates(area)}, from ${area.source}. Each person's own spot needs a flight log.`
+    : "This video has no location in it. Send on WhatsApp adds your device's location to the report, if you allow it.";
 }
 
 function card(person) {
@@ -128,7 +123,7 @@ function card(person) {
     link.href = mapsLink(place);
     link.rel = "noopener noreferrer";
     link.target = "_blank";
-    link.textContent = team ? "Directions in Google Maps" : "Open in Google Maps";
+    link.textContent = "Open in Google Maps";
     const line = document.createElement("p");
     line.append(link);
     details.append(line);
@@ -317,7 +312,7 @@ async function check(file) {
   player.src = videoUrl;
   try {
     const place = await readVideoLocation(file);
-    area = place ? { ...place, source: "from the video file" } : null;
+    area = place ? { ...place, source: "the video file" } : null;
     showResults(await analyse(player, (progress, message) => {
       if (progress) $("bar").value = progress;
       $("working-note").textContent = message;
@@ -342,16 +337,9 @@ function startAgain() {
   index = null;
   listed = [];
   chosen = null;
-  drone = null;
   area = null;
   $("working-note").textContent = "";
   show("start");
-}
-
-function numberIn(id, low, high) {
-  const text = $(id).value.trim();
-  const value = Number(text);
-  return text && value >= low && value <= high ? value : null;
 }
 
 $("again").addEventListener("click", startAgain);
@@ -369,50 +357,42 @@ drop.addEventListener("drop", (event) => {
   if (event.dataTransfer.files[0]) check(event.dataTransfer.files[0]);
 });
 
-$("report-send").addEventListener("click", () => {
-  $("report-note").textContent = "WhatsApp opened. Nothing is sent until you choose who gets it and press send there.";
+// Only ever asked for after a click, and the browser asks the visitor's permission too. These are real
+// coordinates of the device, so the report says so. With no location at all it says unknown, never a guess.
+function addDeviceLocation() {
+  $("report-note").textContent = "Asking your device for its location.";
+  return new Promise((resolve) => {
+    navigator.geolocation?.getCurrentPosition(({ coords }) => {
+      area = { latitude: coords.latitude, longitude: coords.longitude, source: "the device that sent this report" };
+      refresh();
+      resolve();
+    }, resolve, { timeout: LOCATION_TIMEOUT_MS });
+    if (!navigator.geolocation) resolve();
+  });
+}
+
+const needsLocation = () => !area && !listed.some(whereIs);
+const SHARED_NOTE = "Nothing is sent until you choose who gets it and press send there.";
+const NO_LOCATION_NOTE = "Your device's location was not shared, so the report says location unknown.";
+
+$("report-send").addEventListener("click", async (event) => {
+  if (needsLocation()) {
+    event.preventDefault();
+    const tab = window.open("about:blank");  // opened now, because browsers block a window opened after a wait
+    await addDeviceLocation();
+    if (!tab) {
+      $("report-note").textContent = "Press Send on WhatsApp again to open it.";
+      return;
+    }
+    tab.opener = null;
+    tab.location = $("report-send").href;
+  }
+  $("report-note").textContent = `WhatsApp opened. ${SHARED_NOTE}${needsLocation() ? ` ${NO_LOCATION_NOTE}` : ""}`;
 });
 $("report-copy").addEventListener("click", async () => {
+  if (needsLocation()) await addDeviceLocation();
   await navigator.clipboard.writeText(reportText()).catch(() => {});
-  $("report-note").textContent = "Report copied. Nobody has been told until you send it.";
-});
-
-// Only ever asked for after a click, and the browser asks the visitor's permission too.
-$("use-my-location").addEventListener("click", () => {
-  $("location-text").textContent = "Finding your location…";
-  navigator.geolocation.getCurrentPosition(({ coords }) => {
-    area = { latitude: coords.latitude, longitude: coords.longitude, source: "where you are now, not where the video was filmed" };
-    refresh();
-  }, () => {
-    $("location-text").textContent = "Your location could not be read. You can enter the drone's details instead.";
-  }, { timeout: LOCATION_TIMEOUT_MS });
-});
-
-$("place-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const place = parsePlace($("place").value);
-  $("place-error").textContent = place ? "" : "That has no coordinates in it. Open the place in Google Maps and copy the long link from the address bar.";
-  if (!place) return;
-  area = { ...place, source: "as you entered" };
-  $("place").value = "";
-  refresh();
-});
-
-$("where-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const [latitude, longitude] = [numberIn("drone-lat", -90, 90), numberIn("drone-lon", -180, 180)];
-  const height = numberIn("drone-height", 1, 1000);
-  const [heading, tilt] = [numberIn("drone-heading", -360, 360), numberIn("drone-tilt", 0, 89)];
-  if (latitude === null || longitude === null || height === null || heading === null || tilt === null) {
-    $("where-error").textContent = "Please check the numbers. Height is 1 to 1000 m, and tilt is 0 to 89 degrees.";
-    return;
-  }
-  $("where-error").textContent = "";
-  drone = { latitude, longitude, height, heading, tilt, fov: DEFAULT_FOV };
-  const [teamLatitude, teamLongitude] = [numberIn("team-lat", -90, 90), numberIn("team-lon", -180, 180)];
-  team = teamLatitude === null || teamLongitude === null ? null : { latitude: teamLatitude, longitude: teamLongitude };
-  $("where").open = false;
-  refresh();
+  $("report-note").textContent = `Report copied. Nobody has been told until you send it.${needsLocation() ? ` ${NO_LOCATION_NOTE}` : ""}`;
 });
 
 const togglePlay = () => {
