@@ -7,6 +7,7 @@
 The models and their runtime are published with the page. Static hosts cannot send headers, so the
 page carries its Content Security Policy in a meta tag.
 """
+import gzip
 import shutil
 import sys
 from pathlib import Path
@@ -43,7 +44,10 @@ def main(out):
         shutil.copy(STATIC / name, out / name)
     for model in BROWSER_MODELS:
         shutil.copy(model, out / model.name)
-    shutil.copytree(ROOT / "vendor/ort", out / "ort")
+    # The runtime shrinks to a quarter and the page unpacks it. The models barely shrink, so they stay as they are.
+    shutil.copytree(ROOT / "vendor/ort", out / "ort", ignore=shutil.ignore_patterns("*.wasm"))
+    for runtime in (ROOT / "vendor/ort").glob("*.wasm"):
+        (out / "ort" / f"{runtime.name}.gz").write_bytes(gzip.compress(runtime.read_bytes(), mtime=0))
     meta = f'  <meta http-equiv="Content-Security-Policy" content="{CSP}">\n'
     html = (STATIC / "rescue.html").read_text(encoding="utf-8")
     html = html.replace(' data-edition="server"', "")

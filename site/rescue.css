@@ -62,7 +62,7 @@
 .person-pick { display: grid; grid-template-columns: 30px 1fr; gap: 2px 8px; width: 100%; padding: 10px 12px; color: var(--text); text-align: left; background: none; border: 0; }
 .person-pick .place { grid-row: span 2; align-self: start; color: #fff; font-size: 15px; font-weight: 700; text-align: center; background: var(--critical); border-radius: 4px; }
 .person-pick strong { font-size: 15px; }
-.person-pick span:last-child { color: var(--muted); font-size: 14px; }
+.person-pick .why { color: var(--muted); font-size: 14px; }
 .details { padding: 0 12px 12px 12px; font-size: 14px; }
 .details p { margin: 6px 0 0; }
 .details .quiet-text { color: var(--muted); }
@@ -78,3 +78,4 @@
 @media (max-width: 900px) {
   .result-grid { grid-template-columns: minmax(0, 1fr); }
 }
+.person-pick .way { grid-column: 2; color: #4dffa6; font-size: 14px; }

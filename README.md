@@ -8,7 +8,7 @@ After a disaster, teams come back with hours of drone video and someone has to w
 
 **This is a research demo, not a rescue system.** The models miss people, the danger rules have not been checked by emergency responders, and locations are estimates. Nothing is sent to officials unless you send it yourself. In a real emergency, call your local emergency services.
 
-**Status:** live on a free static site with no server. It was checked by eye on one real drone video of a flooded camp, one real phone clip of a flood and one real, calm park video, and on clips panned across disaster photos. It has not been tried on real fire footage. It works best from a drone. On the low-angle phone clip it over-marked people along the bank and missed a man on a boat who was only in view for two seconds.
+**Status:** live on a free static site with no server. It was checked by eye on one real drone video of a flooded camp, one real phone clip of a flood and one real, calm park video, and on clips panned across disaster photos. One real fire clip was tried: a dark, low-angle fire show, where it marked most of the crowd red, because it cannot tell a performer from a victim or judge distance from that angle. It works best from a drone in daylight. On the low-angle phone clip it over-marked people along the bank and missed a man on a boat who was only in view for two seconds.
 
 ## How it works
 
@@ -31,7 +31,7 @@ A report you can copy or open in WhatsApp
 
 **Water outlines** are cleaned after the model: only confident pixels count, gaps the size of a person are filled, and thin strips and small patches are removed. This was tuned by eye on real flood videos, where the raw outline spread onto roofs, walls and heads and put red boxes on people standing beside the water. It costs some foamy water at the edges.
 
-**Who turns red** comes from fixed rules in `site/risk.js`, so every decision can be explained. A person is red if they are in water or fire, within 5 m of flames, or lying still and alone. Dry land beside water stays black, and so does smoke alone, because its boxes are coarse. The water model takes smoke for water, so its result is ignored in any frame that is 10% or more smoke, and in the whole video once a quarter of its frames are, because smoke drifts in and out of view. Points only order the red people: fire first, then how far they are from safety, then being alone and not moving. The rules are written by hand, not learned from responders' decisions.
+**Who turns red** comes from fixed rules in `site/risk.js`, so every decision can be explained. A person is red if they are in water or fire, within 5 m of flames, or lying still and alone. Dry land beside water stays black, and so does smoke alone, because its boxes are coarse. The water model learned daylight floods and takes smoke and dark ground for water, so its result is ignored in any frame that is 10% or more smoke, shows flames, or is mostly dark, and in the whole video once a quarter of its frames are. The page says when a video was too dark to judge water. Flames only count if the check before or after saw flames close by, because a real fire stays put, while a fireball or a swung torch would otherwise turn a whole crowd red. Points only order the red people: fire first, then how far they are from safety, then being alone and not moving. The rules are written by hand, not learned from responders' decisions.
 
 **Distances** use each person's own height as the ruler, because an ordinary video has no scale. They are rough, and worse when the camera looks straight down, where people appear short.
 
@@ -53,29 +53,24 @@ A report you can copy or open in WhatsApp
 
 A smaller 960 model was tried first for speed. Its test recall looked close, at 37% against 44% on VisDrone, but on that real video it found only 9 to 24 people per frame against the full model's 55 to 118, so it was dropped.
 
-**Speed.** Nothing is uploaded, so the video plays within seconds and the check runs while it plays. Almost all the check's time is the people model, at about 1 second a frame on the development laptop, so the page aims to finish in about a minute and a half by choosing how many frames to read. The table is from before the second people model and the water check every second, which added about 20%; the 20 to 33-second videos tested since took 70 to 93 seconds. On the 29-second video:
+**Speed.** Nothing is uploaded, so the video shows at once and the check walks through it on screen, drawing boxes as each moment is read. On the development laptop's Intel graphics the main people model took 1.35 s a frame, and the water and fire models about 0.3 s each, but profiling a 20-second video showed time going to three avoidable places:
 
-| Frames read a second | Time | People followed | Median time followed |
-|---|---|---|---|
-| 5 | 196 s | 186 | 16.2 s |
-| 3 (used up to about 20 seconds) | 114 s | 174 | 16.7 s |
-| **2 (used up to about 30 seconds)** | **79 s** | **172** | **17.0 s** |
-| **1 (used for longer videos)** | **49 s** | **156** | **16.0 s** |
+| Where the time went | Fix |
+|---|---|
+| Grey padding: a widescreen frame in a square input is about 44% padding | The three YOLO models were re-exported to take any shape (`kaggle/fast`), so they read the frame's own shape |
+| Water and fire clean-up in JavaScript: about 0.8 s a check, more than the models | Distance maps compare squared distances from lookup tables, and canvases are reused |
+| Reading the slow models on every sample | The small model and camera motion run twice a second, which keeps tracking through a moving camera. The main model and hazards run once a second |
 
-Fewer people at lower rates can mean fewer broken tracks as well as more missed people, and this is one video, so it is a guide and not a benchmark. The first video also downloads about 120 MB of models, which are then kept in the browser. `deploy/shrink_models.py` halved them by storing large weights as 16-bit numbers; on real frames the same people were found, scores moved by under 0.001, and water outlines agreed 99.96%.
+| Video | Before | After |
+|---|---|---|
+| 20 s drone video of a flooded camp | 75 s | 40 s |
+| 34 s phone clip of a flood | 89 s | 56 to 68 s |
+| 29 s park video | 93 s | 74 s |
+| 16 s fire clip | 70 s | 44 s |
 
-## Security
+Reading the main model once a second first dropped a man who stands in plain view on a roof, because tracks broke. Keeping the cheap samples at twice a second brought him back, and that is why the design has two speeds. Videos that would take over a minute read the slow models every 2 seconds. Models saved by an earlier visit are made ready as the page opens, so the first boxes appear in about 1.5 seconds. On a first visit that takes about 15 seconds, plus the download of about 100 MB, which then stays in the browser. A first visit downloads nothing until a video is added, to protect phone data.
 
-No website is attack-proof. This one avoids most attacks by having nothing to attack: it is static files on Hugging Face, with no server, accounts or database of its own.
-
-- **Your video stays on your device.** It is opened from a local file and never sent anywhere, and `tests/danger_check.py` fails if the page sends any data out.
-- **Scripts:** a Content Security Policy allows only the site's own scripts, and the ONNX runtime is self-hosted and pinned by hash in `deploy/fetch_ort.py`.
-- **Text from a file or a visitor** only ever reaches the page through `textContent`, never as HTML.
-- **Location** is only read from the browser after a click, and the browser asks permission too.
-
-**Not done:** static hosts cannot send headers, so the policy sits in a meta tag, which cannot stop framing. Protection against a traffic flood is whatever Hugging Face provides. No external scan or penetration test has been run.
-
-## Run locally
+Two ways to go faster were tested and rejected. 8-bit weights would halve the download, but on real frames one went from 8 people found to 12 and water outlines agreed only 88%, so the models stay at 16-bit. `deploy/shrink_models.py` halved them that way; on real frames the same people were found, scores moved by under 0.001, and water outlines agreed 99.96%. The 960 model is faster but finds far fewer people, as above. Only the runtime is compressed, from 29 MB to 7 MB, because the models barely shrink.
 
 ```
 pip install -r requirements.txt

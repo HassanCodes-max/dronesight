@@ -1,0 +1,13 @@
+{
+  "id": "hassanagddsbdxfg/dronesight-any-shape",
+  "title": "DroneSight Any Shape",
+  "code_file": "export_fast.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": ["hassanagddsbdxfg/dronesight-experiment-3-train", "hassanagddsbdxfg/dronesight-experiment-4"]
+}

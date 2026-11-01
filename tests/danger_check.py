@@ -23,7 +23,7 @@ from browser_check import BROWSERS, FLAGS, HAS_BOXES, PORT, Page, report  # noqa
 LIMIT_SECONDS = 420
 RULES = """(async () => {
   const { assess, rank } = await import('./risk.js');
-  const { dropSmokyWater, smokeShare } = await import('./hazards.js');
+  const { dropFalseWater, smokeShare } = await import('./hazards.js');
   const person = (values) => ({ id: 1, hazard: null, depthM: 0, distanceM: null, nearestHazard: null, alone: false, still: false, ...values });
   const critical = (values) => assess(person(values)).critical;
   const order = (...people) => rank(people.map((values, i) => person({ id: i + 1, ...values }))).map((p) => p.id);
@@ -51,14 +51,29 @@ RULES = """(async () => {
   for (let x = 0; x < 100; x += 1) strip[5 * 100 + x] = 1;
   out['a thin strip of false water goes'] = cleanWater(strip, 100, 100)[5 * 100 + 50] === 0;
   out['smoke is measured inside the frame only'] = smokeShare([[0, 0, 0.5, 1]]) === 0.5 && smokeShare([[-1, -1, 0.5, 0.5]]) === 0.25 && smokeShare([]) === 0;
-  const frame = (smoke) => ({ flood: { mask: new Uint8Array([1, 1]) }, fire: { smoke } });
+  const frame = (smoke, { dark = false, flames = 0 } = {}) => ({ flood: { mask: new Uint8Array([1, 1]), dark }, fire: { smoke, mask: new Uint8Array([flames, flames]) } });
   const heavy = [[0, 0, 0.5, 1]];
   const mixed = [frame(heavy), frame([]), frame([]), frame([])];
-  dropSmokyWater(mixed);
+  dropFalseWater(mixed);
   out['one smoky frame in four rules out water in the whole video'] = mixed.every((f) => f.flood.mask[0] === 0);
   const calm = [frame(heavy), frame([]), frame([]), frame([]), frame([])];
-  dropSmokyWater(calm);
+  dropFalseWater(calm);
   out['a rarer smoky frame only rules out its own water'] = calm[0].flood.mask[0] === 0 && calm[1].flood.mask[0] === 1;
+  const night = [frame([], { dark: true }), frame([]), frame([]), frame([])];
+  dropFalseWater(night);
+  out['dark frames rule out water like smoke does'] = night.every((f) => f.flood.mask[0] === 0);
+  const flames = [frame([], { flames: 1 }), frame([]), frame([]), frame([]), frame([])];
+  dropFalseWater(flames);
+  out['a frame with flames does not trust its water'] = flames[0].flood.mask[0] === 0 && flames[1].flood.mask[0] === 1;
+  const { steadyFlames } = await import('./hazards.js');
+  const flameAt = (cell) => {
+    const mask = new Uint8Array(100 * 100);
+    for (let row = 0; row < 10; row += 1) mask.fill(1, cell + row * 100, cell + row * 100 + 10);
+    return { flood: {}, fire: { width: 100, height: 100, mask } };
+  };
+  const lasting = [flameAt(4040), flameAt(4040), flameAt(0)];
+  steadyFlames(lasting);
+  out['a lasting fire stays and a passing flame goes'] = lasting[0].fire.mask.some(Boolean) && lasting[1].fire.mask.some(Boolean) && !lasting[2].fire.mask.some(Boolean);
   out['reasons are explained'] = assess(person({ hazard: 'flood water', depthM: 1, alone: true, still: true })).reasons.join() === 'in flood water,alone,not moving';
   return JSON.stringify(out);
 })()"""
